@@ -119,8 +119,8 @@ export default function App() {
 
       // Filter Verval
       const matchesVerval = vervalFilter === "Semua" || 
-                           (vervalFilter === "Verified" && (s.status_verval || "").toLowerCase() === "ya") ||
-                           (vervalFilter === "Pending" && (s.status_verval || "").toLowerCase() !== "ya");
+                           (vervalFilter === "Sudah Verval" && (s.status_verval || "").toLowerCase() === "ya") ||
+                           (vervalFilter === "Belum Verval" && (s.status_verval || "").toLowerCase() !== "ya");
       
       return matchesSearch && matchesRombel && matchesVerval;
     })
