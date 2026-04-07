@@ -437,7 +437,7 @@ function DashboardView({ stats }: { stats: any }) {
   const visitorData = [
     { name: 'Total Siswa', value: stats?.total_siswa || 0, fill: '#3b82f6' },
     { name: 'Sudah Verval', value: stats?.total_verval || 0, fill: '#06b6d4' },
-    { name: 'Menunggu Verval', value: stats?.total_pending || 0, fill: '#f59e0b' },
+    { name: 'Belum Verval', value: stats?.total_pending || 0, fill: '#f59e0b' },
     { name: 'Sudah Login', value: stats?.total_login || 0, fill: '#10b981' },
   ];
 
@@ -456,7 +456,7 @@ function DashboardView({ stats }: { stats: any }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard icon={<Users className="text-blue-400"/>} label="Total Siswa" value={stats?.total_siswa} trend="+28.4%" isUp={true} />
         <StatCard icon={<CheckCircle className="text-blue-400"/>} label="Sudah Verval" value={stats?.total_verval} trend="+12.6%" isUp={true} />
-        <StatCard icon={<Clock className="text-cyan-400"/>} label="Menunggu Verval" value={stats?.total_pending} trend="-3.1%" isUp={false} />
+        <StatCard icon={<Clock className="text-cyan-400"/>} label="Belum Verval" value={stats?.total_pending} trend="-3.1%" isUp={false} />
         <StatCard icon={<LogIn className="text-blue-400"/>} label="Sudah Login" value={stats?.total_login} trend="+11.3%" isUp={true} />
       </div>
       
@@ -581,7 +581,7 @@ function DataSiswaView({ students, search, setSearch, rombelFilter, setRombelFil
                   <span className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
                     s.status_verval === 'Ya' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'
                   }`}>
-                    {s.status_verval === 'Ya' ? 'Verified' : 'Pending'}
+                    {s.status_verval === 'Ya' ? 'Sudah Verval' : 'Belum Verval'}
                   </span>
                 </td>
                 <td className="p-5">
