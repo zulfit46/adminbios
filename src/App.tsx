@@ -27,6 +27,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [students, setStudents] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [rombelFilter, setRombelFilter] = useState("Semua");
@@ -87,6 +88,7 @@ export default function App() {
       const result = await res.json();
       if (result.success) {
         setStudents(result.students || []);
+        setNotifications(result.notifications || []);
         setStats(result.stats || {});
       } else {
         setError(result.error || result.message || "Gagal mengambil data dari server.");
@@ -344,7 +346,7 @@ export default function App() {
                   )}
                 </>
               )}
-              {activeTab === 'notif' && <NotifView form={notifForm} setForm={setNotifForm} />}
+              {activeTab === 'notif' && <NotifView form={notifForm} setForm={setNotifForm} notifications={notifications} />}
             </>
           )}
         </div>
@@ -616,52 +618,109 @@ function DataSiswaView({ students, search, setSearch, rombelFilter, setRombelFil
   );
 }
 
-function NotifView({ form, setForm }: any) {
+function NotifView({ form, setForm, notifications }: any) {
   return (
-    <div className="max-w-3xl space-y-8 pb-10 animate-in slide-in-from-bottom-4 duration-500">
-      <h2 className="text-2xl font-bold text-white tracking-tight">Kirim Pengumuman</h2>
-      <div className="bg-[#111633] border border-white/10 rounded-3xl p-8 space-y-8 shadow-xl">
-        <div className="space-y-3">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Judul Pesan</label>
-          <input 
-            value={form.judul} onChange={(e) => setForm({...form, judul: e.target.value})}
-            className="w-full bg-[#080a1a] border border-white/10 rounded-2xl py-4 px-6 focus:outline-none focus:border-purple-500/50 text-slate-200 transition-all"
-            placeholder="Contoh: Pengumuman Libur"
-          />
-        </div>
-        <div className="space-y-3">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Isi Pesan</label>
-          <textarea 
-            value={form.pesan} onChange={(e) => setForm({...form, pesan: e.target.value})}
-            rows={5}
-            className="w-full bg-[#080a1a] border border-white/10 rounded-2xl py-4 px-6 focus:outline-none focus:border-purple-500/50 text-slate-200 transition-all"
-            placeholder="Tulis pesan lengkap di sini..."
-          />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div className="space-y-10 pb-10 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="max-w-3xl">
+        <h2 className="text-2xl font-bold text-white tracking-tight mb-6">Kirim Pengumuman</h2>
+        <div className="bg-[#111633] border border-white/10 rounded-3xl p-8 space-y-8 shadow-xl">
           <div className="space-y-3">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">NISN Target (Opsional)</label>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Judul Pesan</label>
             <input 
-              value={form.nisn_target} onChange={(e) => setForm({...form, nisn_target: e.target.value})}
+              value={form.judul} onChange={(e) => setForm({...form, judul: e.target.value})}
               className="w-full bg-[#080a1a] border border-white/10 rounded-2xl py-4 px-6 focus:outline-none focus:border-purple-500/50 text-slate-200 transition-all"
-              placeholder="Kosongkan untuk semua"
+              placeholder="Contoh: Pengumuman Libur"
             />
           </div>
           <div className="space-y-3">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Tipe</label>
-            <select 
-              value={form.tipe} onChange={(e) => setForm({...form, tipe: e.target.value})}
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Isi Pesan</label>
+            <textarea 
+              value={form.pesan} onChange={(e) => setForm({...form, pesan: e.target.value})}
+              rows={5}
               className="w-full bg-[#080a1a] border border-white/10 rounded-2xl py-4 px-6 focus:outline-none focus:border-purple-500/50 text-slate-200 transition-all"
-            >
-              <option value="info">Informasi (Biru)</option>
-              <option value="warning">Peringatan (Kuning)</option>
-              <option value="error">Penting (Merah)</option>
-            </select>
+              placeholder="Tulis pesan lengkap di sini..."
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">NISN Target (Opsional)</label>
+              <input 
+                value={form.nisn_target} onChange={(e) => setForm({...form, nisn_target: e.target.value})}
+                className="w-full bg-[#080a1a] border border-white/10 rounded-2xl py-4 px-6 focus:outline-none focus:border-purple-500/50 text-slate-200 transition-all"
+                placeholder="Kosongkan untuk semua"
+              />
+            </div>
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Tipe</label>
+              <select 
+                value={form.tipe} onChange={(e) => setForm({...form, tipe: e.target.value})}
+                className="w-full bg-[#080a1a] border border-white/10 rounded-2xl py-4 px-6 focus:outline-none focus:border-purple-500/50 text-slate-200 transition-all"
+              >
+                <option value="info">Informasi (Biru)</option>
+                <option value="warning">Peringatan (Kuning)</option>
+                <option value="error">Penting (Merah)</option>
+              </select>
+            </div>
+          </div>
+          <button className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-purple-600/20 active:scale-[0.98] border border-white/10">
+            <Send size={20} /> Kirim Sekarang
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold text-white tracking-tight">Riwayat Pengumuman</h2>
+        <div className="bg-[#111633] border border-white/10 rounded-3xl overflow-hidden shadow-xl">
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-white/5 bg-white/5">
+                  <th className="p-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tanggal</th>
+                  <th className="p-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Judul</th>
+                  <th className="p-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Target</th>
+                  <th className="p-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tipe</th>
+                  <th className="p-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {notifications.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-10 text-center text-slate-500 font-medium italic">
+                      Belum ada riwayat pengumuman.
+                    </td>
+                  </tr>
+                ) : (
+                  notifications.map((notif: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-white/[0.02] transition-colors group">
+                      <td className="p-5 text-sm text-slate-400 font-medium">
+                        {notif.tanggal ? new Date(notif.tanggal).toLocaleDateString('id-ID') : '-'}
+                      </td>
+                      <td className="p-5">
+                        <div className="text-sm font-bold text-white mb-1">{notif.judul}</div>
+                        <div className="text-xs text-slate-500 truncate max-w-[300px]">{notif.pesan}</div>
+                      </td>
+                      <td className="p-5 text-sm text-slate-400">{notif.nisn_target || 'Semua'}</td>
+                      <td className="p-5">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          notif.tipe === 'info' ? 'bg-blue-500/10 text-blue-400' :
+                          notif.tipe === 'warning' ? 'bg-amber-500/10 text-amber-400' :
+                          'bg-red-500/10 text-red-400'
+                        }`}>
+                          {notif.tipe}
+                        </span>
+                      </td>
+                      <td className="p-5">
+                        <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
+                          <CheckCircle size={14} /> Terkirim
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-        <button className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-purple-600/20 active:scale-[0.98] border border-white/10">
-          <Send size={20} /> Kirim Sekarang
-        </button>
       </div>
     </div>
   );
