@@ -32,6 +32,8 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [rombelFilter, setRombelFilter] = useState("Semua");
   const [vervalFilter, setVervalFilter] = useState("Semua");
+  const [statusVervalFilter, setStatusVervalFilter] = useState("Semua");
+  const [statusKKFilter, setStatusKKFilter] = useState("Semua");
   const [notifForm, setNotifForm] = useState({ judul: '', pesan: '', tipe: 'info', nisn_target: '' });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -119,10 +121,16 @@ export default function App() {
 
       // Filter Verval
       const matchesVerval = vervalFilter === "Semua" || 
-                           (vervalFilter === "Sudah Verval" && (s.status_verval || "").toLowerCase() === "ya") ||
-                           (vervalFilter === "Belum Verval" && (s.status_verval || "").toLowerCase() !== "ya");
+                           (vervalFilter === "Sudah Verval" && (s.status_verval || "").toString().trim() !== "") ||
+                           (vervalFilter === "Belum Verval" && (s.status_verval || "").toString().trim() === "");
+
+      // Filter Status Verval (Admin Only)
+      const matchesStatusVerval = user?.status !== 'admin' || statusVervalFilter === "Semua" || s.status_verval === statusVervalFilter;
       
-      return matchesSearch && matchesRombel && matchesVerval;
+      // Filter Status KK (Admin Only)
+      const matchesStatusKK = user?.status !== 'admin' || statusKKFilter === "Semua" || s.status_kk === statusKKFilter;
+      
+      return matchesSearch && matchesRombel && matchesVerval && matchesStatusVerval && matchesStatusKK;
     })
     .sort((a, b) => {
       const rombelA = (a.rombel || "").toString();
@@ -136,6 +144,8 @@ export default function App() {
     });
 
   const uniqueRombels = ["Semua", ...new Set(students.map(s => s.rombel).filter(Boolean))].sort();
+  const uniqueStatusVerval = ["Semua", ...new Set(students.map(s => s.status_verval).filter(Boolean))].sort();
+  const uniqueStatusKK = ["Semua", ...new Set(students.map(s => s.status_kk).filter(Boolean))].sort();
 
   // Calculate stats based on user scope (Admin = All, User = Their Rombel)
   const studentsInScope = user?.status === 'user' 
@@ -154,8 +164,8 @@ export default function App() {
     };
 
     studentsInScope.forEach(s => {
-      const status = (s.status_verval || "").toLowerCase();
-      if (status === 'ya' || status === 'sudah') statsObj.total_verval++;
+      const status = (s.status_verval || "").toString().trim();
+      if (status !== "") statsObj.total_verval++;
       else statsObj.total_pending++;
 
       if (s.terakhir_login && s.terakhir_login.toString().trim() !== "") {
@@ -333,7 +343,13 @@ export default function App() {
                       setRombelFilter={setRombelFilter}
                       vervalFilter={vervalFilter}
                       setVervalFilter={setVervalFilter}
+                      statusVervalFilter={statusVervalFilter}
+                      setStatusVervalFilter={setStatusVervalFilter}
+                      statusKKFilter={statusKKFilter}
+                      setStatusKKFilter={setStatusKKFilter}
                       uniqueRombels={uniqueRombels}
+                      uniqueStatusVerval={uniqueStatusVerval}
+                      uniqueStatusKK={uniqueStatusKK}
                       onRefresh={fetchData}
                       user={user}
                     />
@@ -513,8 +529,17 @@ function DashboardView({ stats }: { stats: any }) {
   );
 }
 
-function DataSiswaView({ students, search, setSearch, rombelFilter, setRombelFilter, vervalFilter, setVervalFilter, uniqueRombels, onRefresh, user }: any) {
+function DataSiswaView({ 
+  students, search, setSearch, 
+  rombelFilter, setRombelFilter, 
+  vervalFilter, setVervalFilter, 
+  statusVervalFilter, setStatusVervalFilter,
+  statusKKFilter, setStatusKKFilter,
+  uniqueRombels, uniqueStatusVerval, uniqueStatusKK,
+  onRefresh, user 
+}: any) {
   const isUser = user?.status === 'user';
+  const isAdmin = user?.status === 'admin';
 
   return (
     <div className="space-y-6 pb-10 animate-in slide-in-from-bottom-4 duration-500">
@@ -526,10 +551,36 @@ function DataSiswaView({ students, search, setSearch, rombelFilter, setRombelFil
             onChange={(e) => setVervalFilter(e.target.value)}
             className="flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200"
           >
-            <option value="Semua">Semua Status</option>
+            <option value="Semua">Status Verval</option>
             <option value="Sudah Verval">Sudah Verval</option>
             <option value="Belum Verval">Belum Verval</option>
           </select>
+          
+          {isAdmin && (
+            <>
+              <select 
+                value={statusVervalFilter}
+                onChange={(e) => setStatusVervalFilter(e.target.value)}
+                className="flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200"
+              >
+                <option value="Semua">Verval Ijazah</option>
+                {uniqueStatusVerval.filter(v => v !== "Semua").map((v: string) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+              <select 
+                value={statusKKFilter}
+                onChange={(e) => setStatusKKFilter(e.target.value)}
+                className="flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200"
+              >
+                <option value="Semua">Verval KK</option>
+                {uniqueStatusKK.filter(v => v !== "Semua").map((v: string) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </>
+          )}
+
           <select 
             value={rombelFilter}
             onChange={(e) => setRombelFilter(e.target.value)}
@@ -561,8 +612,14 @@ function DataSiswaView({ students, search, setSearch, rombelFilter, setRombelFil
               <tr>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Siswa</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Rombel / Jurusan</th>
-                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Verval</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Login</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Status Verval</th>
+                {user.status === 'admin' && (
+                  <>
+                    <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Verval Ijazah</th>
+                    <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Verval KK</th>
+                  </>
+                )}
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 text-right">Aksi</th>
               </tr>
             </thead>
@@ -576,13 +633,6 @@ function DataSiswaView({ students, search, setSearch, rombelFilter, setRombelFil
                 <td className="p-5">
                   <p className="text-sm font-bold text-slate-300">{s.rombel}</p>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{s.jurusan}</p>
-                </td>
-                <td className="p-5">
-                  <span className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
-                    s.status_verval === 'Ya' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'
-                  }`}>
-                    {s.status_verval === 'Ya' ? 'Sudah Verval' : 'Belum Verval'}
-                  </span>
                 </td>
                 <td className="p-5">
                   {(() => {
@@ -602,6 +652,23 @@ function DataSiswaView({ students, search, setSearch, rombelFilter, setRombelFil
                     );
                   })()}
                 </td>
+                <td className="p-5">
+                  <span className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
+                    (s.status_verval || "").toString().trim() !== "" ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'
+                  }`}>
+                    {(s.status_verval || "").toString().trim() !== "" ? 'Sudah Verval' : 'Belum Verval'}
+                  </span>
+                </td>
+                {user.status === 'admin' && (
+                  <>
+                    <td className="p-5">
+                      <p className="text-sm font-bold text-slate-300">{s.status_verval || "-"}</p>
+                    </td>
+                    <td className="p-5">
+                      <p className="text-sm font-bold text-slate-300">{s.status_kk || "-"}</p>
+                    </td>
+                  </>
+                )}
                 <td className="p-5 text-right">
                   <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button className="p-2 text-slate-500 hover:text-purple-400 transition-colors"><ChevronRight size={18}/></button>
