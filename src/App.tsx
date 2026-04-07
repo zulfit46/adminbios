@@ -527,8 +527,8 @@ function DataSiswaView({ students, search, setSearch, rombelFilter, setRombelFil
             className="flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200"
           >
             <option value="Semua">Semua Status</option>
-            <option value="Verified">Verified</option>
-            <option value="Pending">Pending</option>
+            <option value="Verified">Sudah Verval</option>
+            <option value="Pending">Belum Verval</option>
           </select>
           <select 
             value={rombelFilter}
