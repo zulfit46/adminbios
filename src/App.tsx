@@ -10,7 +10,7 @@ import {
   Trash2, RefreshCw, ChevronRight, LogOut,
   Menu, X, TrendingUp, TrendingDown,
   MoreHorizontal, Globe, User, Settings,
-  FileText, CreditCard, Layout
+  FileText, CreditCard, Layout, ShieldCheck
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -34,7 +34,9 @@ export default function App() {
   const [vervalFilter, setVervalFilter] = useState("Semua");
   const [statusVervalFilter, setStatusVervalFilter] = useState("Semua");
   const [statusKKFilter, setStatusKKFilter] = useState("Semua");
-  const [notifForm, setNotifForm] = useState({ judul: '', pesan: '', tipe: 'info', nisn_target: '' });
+  const [loginFilter, setLoginFilter] = useState("Semua");
+  const [notifForm, setNotifForm] = useState({ judul: '', pesan: '', tipe: 'info', nisn_target: '', target_kelas: '' });
+  const [aksesForm, setAksesForm] = useState({ target_kelas: '', selected_menus: [] as string[] });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Login Logic
@@ -68,6 +70,59 @@ export default function App() {
       setError("Gagal terhubung ke server login.");
     }
     setLoading(false);
+  };
+
+  const handleSendNotif = async () => {
+    if (!notifForm.judul || !notifForm.pesan) {
+      setError("Judul dan Pesan harus diisi!");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}?action=send_notif`, {
+        method: 'POST',
+        body: JSON.stringify(notifForm)
+      });
+      const result = await res.json();
+      if (result.success) {
+        setNotifForm({ judul: '', pesan: '', tipe: 'info', nisn_target: '', target_kelas: '' });
+        fetchData();
+      } else {
+        setError(result.error || "Gagal mengirim notifikasi");
+      }
+    } catch (e: any) {
+      setError("Gagal terhubung ke server untuk mengirim notifikasi.");
+    }
+    setLoading(false);
+  };
+
+  const handleUpdateAkses = async () => {
+    if (!aksesForm.target_kelas) {
+      setError("Pilih minimal satu kelas target");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}?action=update_akses_bulk`, {
+        method: 'POST',
+        body: JSON.stringify({
+          target_kelas: aksesForm.target_kelas,
+          akses_menu: aksesForm.selected_menus.join(',')
+        })
+      });
+      const result = await res.json();
+      if (result.success) {
+        setError(null);
+        alert("Akses menu berhasil diperbarui untuk kelas terpilih");
+        fetchData();
+      } else {
+        setError(result.error || "Gagal memperbarui akses");
+      }
+    } catch (err) {
+      setError("Gagal terhubung ke server.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fetchData = async () => {
@@ -130,7 +185,14 @@ export default function App() {
       // Filter Status KK (Admin Only)
       const matchesStatusKK = user?.status !== 'admin' || statusKKFilter === "Semua" || s.status_kk === statusKKFilter;
       
-      return matchesSearch && matchesRombel && matchesVerval && matchesStatusVerval && matchesStatusKK;
+      // Filter Login
+      const loginData = s.terakhir_login || s.terakhir_login_siswa || "";
+      const hasLoggedIn = loginData.toString().trim() !== "";
+      const matchesLogin = loginFilter === "Semua" || 
+                          (loginFilter === "Sudah Login" && hasLoggedIn) ||
+                          (loginFilter === "Belum Login" && !hasLoggedIn);
+      
+      return matchesSearch && matchesRombel && matchesVerval && matchesStatusVerval && matchesStatusKK && matchesLogin;
     })
     .sort((a, b) => {
       const rombelA = (a.rombel || "").toString();
@@ -146,6 +208,7 @@ export default function App() {
   const uniqueRombels = ["Semua", ...new Set(students.map(s => s.rombel).filter(Boolean))].sort();
   const uniqueStatusVerval = ["Semua", ...new Set(students.map(s => s.status_verval).filter(Boolean))].sort();
   const uniqueStatusKK = ["Semua", ...new Set(students.map(s => s.status_kk).filter(Boolean))].sort();
+  const uniqueClasses = ["Semua", ...new Set(students.map(s => s.kelas).filter(Boolean))].sort();
 
   // Calculate stats based on user scope (Admin = All, User = Their Rombel)
   const studentsInScope = user?.status === 'user' 
@@ -179,6 +242,26 @@ export default function App() {
 
     return statsObj;
   }, [studentsInScope]);
+
+  const userNotifications = useMemo(() => {
+    if (user?.status === 'admin') return notifications;
+    
+    return notifications.filter(n => {
+      // Jika ada NISN target, harus cocok
+      if (n.nisn_target && n.nisn_target.toString().trim() !== "") {
+        return n.nisn_target.toString() === user?.login?.toString() || n.nisn_target.toString() === user?.nisn?.toString();
+      }
+      
+      // Jika ada target kelas, harus cocok
+      if (n.target_kelas && n.target_kelas.toString().trim() !== "") {
+        const targets = n.target_kelas.toString().split(',').map((t: string) => t.trim());
+        return targets.includes(user?.kelas?.toString());
+      }
+      
+      // Jika kosong semua, berarti untuk semua
+      return true;
+    });
+  }, [notifications, user]);
 
   const isAllowed = (menu: string) => {
     if (user?.status === 'admin') return true;
@@ -263,8 +346,11 @@ export default function App() {
             )}
           </div>
 
-          {user.status === 'admin' && (
+          {isAllowed('notifikasi') && (
             <NavItem active={activeTab === 'notif'} onClick={() => { setActiveTab('notif'); setIsSidebarOpen(false); }} icon={<Bell size={20}/>} label="Notifikasi" />
+          )}
+          {isAllowed('akses_kontrol') && (
+            <NavItem active={activeTab === 'akses'} onClick={() => { setActiveTab('akses'); setIsSidebarOpen(false); }} icon={<ShieldCheck size={20}/>} label="Akses Menu" />
           )}
         </nav>
 
@@ -331,7 +417,7 @@ export default function App() {
             </div>
           ) : (
             <>
-              {activeTab === 'dashboard' && <DashboardView stats={displayStats} />}
+              {activeTab === 'dashboard' && <DashboardView stats={displayStats} notifications={userNotifications} />}
               {activeTab === 'data' && (
                 <>
                   {activeSubTab === 'verval' ? (
@@ -347,6 +433,8 @@ export default function App() {
                       setStatusVervalFilter={setStatusVervalFilter}
                       statusKKFilter={statusKKFilter}
                       setStatusKKFilter={setStatusKKFilter}
+                      loginFilter={loginFilter}
+                      setLoginFilter={setLoginFilter}
                       uniqueRombels={uniqueRombels}
                       uniqueStatusVerval={uniqueStatusVerval}
                       uniqueStatusKK={uniqueStatusKK}
@@ -362,7 +450,25 @@ export default function App() {
                   )}
                 </>
               )}
-              {activeTab === 'notif' && <NotifView form={notifForm} setForm={setNotifForm} notifications={notifications} />}
+              {activeTab === 'notif' && (
+                <NotifView 
+                  form={notifForm} 
+                  setForm={setNotifForm} 
+                  notifications={notifications} 
+                  onSend={handleSendNotif}
+                  uniqueClasses={uniqueClasses}
+                  loading={loading}
+                />
+              )}
+              {activeTab === 'akses' && (
+                <AksesMenuView 
+                  form={aksesForm}
+                  setForm={setAksesForm}
+                  onSave={handleUpdateAkses}
+                  uniqueClasses={uniqueClasses}
+                  loading={loading}
+                />
+              )}
             </>
           )}
         </div>
@@ -434,7 +540,7 @@ function LoginView({ onLogin, loading, error }: any) {
   );
 }
 
-function DashboardView({ stats }: { stats: any }) {
+function DashboardView({ stats, notifications }: { stats: any, notifications: any[] }) {
   const revenueData = [
     { name: 'Jan', current: 4000, subscribers: 2400, new: 2400 },
     { name: 'Feb', current: 3000, subscribers: 1398, new: 2210 },
@@ -525,6 +631,51 @@ function DashboardView({ stats }: { stats: any }) {
           </div>
         </div>
       </div>
+
+      {/* NOTIFIKASI SECTION */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-12 bg-[#111633] border border-white/10 rounded-3xl p-8 shadow-xl">
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="font-bold text-lg text-white flex items-center gap-3">
+              <Bell className="text-purple-400" size={20} /> Pengumuman Terbaru
+            </h3>
+          </div>
+          
+          <div className="space-y-4">
+            {notifications.length === 0 ? (
+              <div className="text-center py-10 text-slate-500 italic bg-[#080a1a] rounded-2xl border border-white/5">
+                Belum ada pengumuman untuk Anda.
+              </div>
+            ) : (
+              notifications.slice(0, 5).map((notif, idx) => (
+                <div key={idx} className="bg-[#080a1a] border border-white/5 rounded-2xl p-6 hover:border-purple-500/30 transition-all group">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        notif.tipe === 'info' ? 'bg-blue-500/10 text-blue-400' :
+                        notif.tipe === 'warning' ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-red-500/10 text-red-400'
+                      }`}>
+                        {notif.tipe}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                        {notif.tanggal ? new Date(notif.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
+                      </span>
+                      {notif.target_kelas && (
+                        <span className="px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded text-[9px] font-bold">
+                          Kelas: {notif.target_kelas}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <h4 className="text-lg font-bold text-white mb-2 group-hover:text-purple-400 transition-colors">{notif.judul}</h4>
+                  <p className="text-sm text-slate-400 leading-relaxed">{notif.pesan}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -535,6 +686,7 @@ function DataSiswaView({
   vervalFilter, setVervalFilter, 
   statusVervalFilter, setStatusVervalFilter,
   statusKKFilter, setStatusKKFilter,
+  loginFilter, setLoginFilter,
   uniqueRombels, uniqueStatusVerval, uniqueStatusKK,
   onRefresh, user 
 }: any) {
@@ -554,6 +706,16 @@ function DataSiswaView({
             <option value="Semua">Status Verval</option>
             <option value="Sudah Verval">Sudah Verval</option>
             <option value="Belum Verval">Belum Verval</option>
+          </select>
+
+          <select 
+            value={loginFilter}
+            onChange={(e) => setLoginFilter(e.target.value)}
+            className="flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200"
+          >
+            <option value="Semua">Status Login</option>
+            <option value="Sudah Login">Sudah Login</option>
+            <option value="Belum Login">Belum Login</option>
           </select>
           
           {isAdmin && (
@@ -685,7 +847,107 @@ function DataSiswaView({
   );
 }
 
-function NotifView({ form, setForm, notifications }: any) {
+function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading }: any) {
+  const menuOptions = [
+    'dashboard', 'profil', 'orangtua', 'registrasi', 'periodik', 
+    'kurang_mampu', 'notifikasi', 'verval', 'cetak'
+  ];
+
+  return (
+    <div className="space-y-10 pb-10 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="max-w-3xl">
+        <h2 className="text-2xl font-bold text-white tracking-tight mb-2">Kontrol Akses Menu</h2>
+        <p className="text-slate-500 text-sm mb-8">Atur menu apa saja yang bisa diakses oleh siswa berdasarkan kelas mereka.</p>
+        
+        <div className="bg-[#111633] border border-white/10 rounded-3xl p-8 space-y-10 shadow-xl">
+          {/* Target Kelas */}
+          <div className="space-y-4">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Target Kelas</label>
+            <div className="flex flex-wrap gap-2">
+              {uniqueClasses.filter((c: string) => c !== "Semua").map((c: string) => {
+                const isSelected = form.target_kelas.split(',').filter(Boolean).includes(c);
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => {
+                      const current = form.target_kelas ? form.target_kelas.split(',').filter(Boolean) : [];
+                      let next;
+                      if (current.includes(c)) {
+                        next = current.filter((item: string) => item !== c);
+                      } else {
+                        next = [...current, c];
+                      }
+                      setForm({...form, target_kelas: next.join(',')});
+                    }}
+                    className={`px-5 py-3 rounded-2xl text-xs font-bold transition-all border ${
+                      isSelected 
+                        ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20' 
+                        : 'bg-[#080a1a] border-white/10 text-slate-400 hover:border-white/20'
+                    }`}
+                  >
+                    Kelas {c}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Pilih Menu */}
+          <div className="space-y-4">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Menu yang Diizinkan</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {menuOptions.map((menu) => {
+                const isSelected = form.selected_menus.includes(menu);
+                return (
+                  <button
+                    key={menu}
+                    type="button"
+                    onClick={() => {
+                      let next;
+                      if (form.selected_menus.includes(menu)) {
+                        next = form.selected_menus.filter((m: string) => m !== menu);
+                      } else {
+                        next = [...form.selected_menus, menu];
+                      }
+                      setForm({...form, selected_menus: next});
+                    }}
+                    className={`flex items-center gap-3 p-4 rounded-2xl text-xs font-bold transition-all border ${
+                      isSelected 
+                        ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' 
+                        : 'bg-[#080a1a] border-white/10 text-slate-500 hover:border-white/20'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                      isSelected ? 'bg-emerald-500 border-emerald-500' : 'border-slate-700'
+                    }`}>
+                      {isSelected && <CheckCircle size={10} className="text-white" />}
+                    </div>
+                    <span className="capitalize">{menu.replace('_', ' ')}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <button 
+            onClick={onSave}
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-blue-600/20 active:scale-[0.98]"
+          >
+            {loading ? <RefreshCw className="animate-spin" size={20} /> : (
+              <>
+                <ShieldCheck size={20} /> Simpan Pengaturan Akses
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotifView({ form, setForm, notifications, onSend, uniqueClasses, loading }: any) {
   return (
     <div className="space-y-10 pb-10 animate-in slide-in-from-bottom-4 duration-500">
       <div className="max-w-3xl">
@@ -708,7 +970,45 @@ function NotifView({ form, setForm, notifications }: any) {
               placeholder="Tulis pesan lengkap di sini..."
             />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Target Kelas</label>
+              <div className="flex flex-wrap gap-2">
+                {uniqueClasses.map((c: string) => {
+                  const isSelected = c === "Semua" 
+                    ? (form.target_kelas === "" || form.target_kelas === "Semua")
+                    : form.target_kelas.split(',').filter(Boolean).includes(c);
+                  
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        if (c === "Semua") {
+                          setForm({...form, target_kelas: ""});
+                        } else {
+                          const current = form.target_kelas ? form.target_kelas.split(',').filter(Boolean) : [];
+                          let next;
+                          if (current.includes(c)) {
+                            next = current.filter((item: string) => item !== c);
+                          } else {
+                            next = [...current, c];
+                          }
+                          setForm({...form, target_kelas: next.join(',')});
+                        }
+                      }}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+                        isSelected 
+                          ? 'bg-purple-600 border-purple-500 text-white shadow-lg shadow-purple-600/20' 
+                          : 'bg-[#080a1a] border-white/10 text-slate-400 hover:border-white/20'
+                      }`}
+                    >
+                      {c === "Semua" ? "Semua Kelas" : c}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div className="space-y-3">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">NISN Target (Opsional)</label>
               <input 
@@ -729,8 +1029,12 @@ function NotifView({ form, setForm, notifications }: any) {
               </select>
             </div>
           </div>
-          <button className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-purple-600/20 active:scale-[0.98] border border-white/10">
-            <Send size={20} /> Kirim Sekarang
+          <button 
+            onClick={onSend}
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-purple-600/20 active:scale-[0.98] border border-white/10"
+          >
+            {loading ? <RefreshCw className="animate-spin" size={20} /> : <><Send size={20} /> Kirim Sekarang</>}
           </button>
         </div>
       </div>
@@ -766,7 +1070,9 @@ function NotifView({ form, setForm, notifications }: any) {
                         <div className="text-sm font-bold text-white mb-1">{notif.judul}</div>
                         <div className="text-xs text-slate-500 truncate max-w-[300px]">{notif.pesan}</div>
                       </td>
-                      <td className="p-5 text-sm text-slate-400">{notif.nisn_target || 'Semua'}</td>
+                      <td className="p-5 text-sm text-slate-400">
+                        {notif.nisn_target ? `NISN: ${notif.nisn_target}` : (notif.target_kelas ? `Kelas: ${notif.target_kelas}` : 'Semua')}
+                      </td>
                       <td className="p-5">
                         <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                           notif.tipe === 'info' ? 'bg-blue-500/10 text-blue-400' :
