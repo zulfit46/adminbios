@@ -10,7 +10,8 @@ import {
   Trash2, RefreshCw, ChevronRight, LogOut,
   Menu, X, TrendingUp, TrendingDown,
   MoreHorizontal, Globe, User, Settings,
-  FileText, CreditCard, Layout, ShieldCheck
+  FileText, CreditCard, Layout, ShieldCheck,
+  Edit2
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -36,6 +37,10 @@ export default function App() {
   const [statusKKFilter, setStatusKKFilter] = useState("Semua");
   const [loginFilter, setLoginFilter] = useState("Semua");
   const [notifForm, setNotifForm] = useState({ judul: '', pesan: '', tipe: 'info', nisn_target: '', target_kelas: '' });
+  const [isEditingNotif, setIsEditingNotif] = useState(false);
+  const [editingNotifRow, setEditingNotifRow] = useState<number | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [notifRowToDelete, setNotifRowToDelete] = useState<number | null>(null);
   const [aksesForm, setAksesForm] = useState({ target_kelas: '', selected_menus: [] as string[] });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -79,20 +84,52 @@ export default function App() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}?action=send_notif`, {
+      const action = isEditingNotif ? 'update_notif' : 'send_notif';
+      const body = isEditingNotif ? { ...notifForm, row: editingNotifRow } : notifForm;
+      
+      const res = await fetch(`${API_URL}?action=${action}`, {
         method: 'POST',
-        body: JSON.stringify(notifForm)
+        body: JSON.stringify(body)
       });
       const result = await res.json();
       if (result.success) {
         setNotifForm({ judul: '', pesan: '', tipe: 'info', nisn_target: '', target_kelas: '' });
+        setIsEditingNotif(false);
+        setEditingNotifRow(null);
         fetchData();
       } else {
-        setError(result.error || "Gagal mengirim notifikasi");
+        setError(result.error || "Gagal memproses notifikasi");
       }
     } catch (e: any) {
-      setError("Gagal terhubung ke server untuk mengirim notifikasi.");
+      setError("Gagal terhubung ke server.");
     }
+    setLoading(false);
+  };
+
+  const handleDeleteNotif = (row: number) => {
+    setNotifRowToDelete(row);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteNotif = async () => {
+    if (notifRowToDelete === null) return;
+    setLoading(true);
+    setShowDeleteConfirm(false);
+    try {
+      const res = await fetch(`${API_URL}?action=delete_notif`, {
+        method: 'POST',
+        body: JSON.stringify({ row: notifRowToDelete })
+      });
+      const result = await res.json();
+      if (result.success) {
+        fetchData();
+      } else {
+        setError(result.error || "Gagal menghapus notifikasi");
+      }
+    } catch (e: any) {
+      setError("Gagal terhubung ke server.");
+    }
+    setNotifRowToDelete(null);
     setLoading(false);
   };
 
@@ -113,7 +150,7 @@ export default function App() {
       const result = await res.json();
       if (result.success) {
         setError(null);
-        alert("Akses menu berhasil diperbarui untuk kelas terpilih");
+        // alert removed
         fetchData();
       } else {
         setError(result.error || "Gagal memperbarui akses");
@@ -456,6 +493,24 @@ export default function App() {
                   setForm={setNotifForm} 
                   notifications={notifications} 
                   onSend={handleSendNotif}
+                  onDelete={handleDeleteNotif}
+                  onEdit={(notif: any) => {
+                    setNotifForm({
+                      judul: notif.judul,
+                      pesan: notif.pesan,
+                      tipe: notif.tipe,
+                      nisn_target: notif.nisn_target,
+                      target_kelas: notif.target_kelas
+                    });
+                    setIsEditingNotif(true);
+                    setEditingNotifRow(notif.row);
+                  }}
+                  isEditing={isEditingNotif}
+                  onCancelEdit={() => {
+                    setNotifForm({ judul: '', pesan: '', tipe: 'info', nisn_target: '', target_kelas: '' });
+                    setIsEditingNotif(false);
+                    setEditingNotifRow(null);
+                  }}
                   uniqueClasses={uniqueClasses}
                   loading={loading}
                 />
@@ -473,6 +528,35 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {/* Modal Konfirmasi Hapus */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-[#111633] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertCircle size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-white text-center mb-2">Hapus Pengumuman?</h3>
+            <p className="text-slate-400 text-center text-sm mb-8">
+              Tindakan ini tidak dapat dibatalkan. Pesan akan dihapus permanen dari riwayat.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 py-3 px-4 bg-white/5 hover:bg-white/10 text-slate-300 font-bold rounded-xl transition-all"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={confirmDeleteNotif}
+                className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-red-600/20"
+              >
+                Ya, Hapus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -947,11 +1031,11 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading }: any) {
   );
 }
 
-function NotifView({ form, setForm, notifications, onSend, uniqueClasses, loading }: any) {
+function NotifView({ form, setForm, notifications, onSend, onDelete, onEdit, isEditing, onCancelEdit, uniqueClasses, loading }: any) {
   return (
     <div className="space-y-10 pb-10 animate-in slide-in-from-bottom-4 duration-500">
       <div className="max-w-3xl">
-        <h2 className="text-2xl font-bold text-white tracking-tight mb-6">Kirim Pengumuman</h2>
+        <h2 className="text-2xl font-bold text-white tracking-tight mb-6">{isEditing ? 'Edit Pengumuman' : 'Kirim Pengumuman'}</h2>
         <div className="bg-[#111633] border border-white/10 rounded-3xl p-8 space-y-8 shadow-xl">
           <div className="space-y-3">
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Judul Pesan</label>
@@ -1029,13 +1113,27 @@ function NotifView({ form, setForm, notifications, onSend, uniqueClasses, loadin
               </select>
             </div>
           </div>
-          <button 
-            onClick={onSend}
-            disabled={loading}
-            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-purple-600/20 active:scale-[0.98] border border-white/10"
-          >
-            {loading ? <RefreshCw className="animate-spin" size={20} /> : <><Send size={20} /> Kirim Sekarang</>}
-          </button>
+          <div className="flex gap-3">
+            {isEditing && (
+              <button 
+                onClick={onCancelEdit}
+                className="flex-1 bg-[#080a1a] border border-white/10 hover:border-white/20 text-slate-400 font-bold py-5 rounded-2xl transition-all active:scale-[0.98]"
+              >
+                Batal
+              </button>
+            )}
+            <button 
+              onClick={onSend}
+              disabled={loading}
+              className="flex-[2] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-purple-600/20 active:scale-[0.98] border border-white/10"
+            >
+              {loading ? <RefreshCw className="animate-spin" size={20} /> : (
+                <>
+                  <Send size={20} /> {isEditing ? 'Update Pesan' : 'Kirim Sekarang'}
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1050,7 +1148,7 @@ function NotifView({ form, setForm, notifications, onSend, uniqueClasses, loadin
                   <th className="p-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Judul</th>
                   <th className="p-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Target</th>
                   <th className="p-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tipe</th>
-                  <th className="p-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</th>
+                  <th className="p-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -1083,8 +1181,21 @@ function NotifView({ form, setForm, notifications, onSend, uniqueClasses, loadin
                         </span>
                       </td>
                       <td className="p-5">
-                        <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
-                          <CheckCircle size={14} /> Terkirim
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => onEdit(notif)}
+                            className="p-2 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-all"
+                            title="Edit"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button 
+                            onClick={() => onDelete(notif.row)}
+                            className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg transition-all"
+                            title="Hapus"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </td>
                     </tr>
