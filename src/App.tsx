@@ -715,51 +715,6 @@ function DashboardView({ stats, notifications }: { stats: any, notifications: an
           </div>
         </div>
       </div>
-
-      {/* NOTIFIKASI SECTION */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-12 bg-[#111633] border border-white/10 rounded-3xl p-8 shadow-xl">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="font-bold text-lg text-white flex items-center gap-3">
-              <Bell className="text-purple-400" size={20} /> Pengumuman Terbaru
-            </h3>
-          </div>
-          
-          <div className="space-y-4">
-            {notifications.length === 0 ? (
-              <div className="text-center py-10 text-slate-500 italic bg-[#080a1a] rounded-2xl border border-white/5">
-                Belum ada pengumuman untuk Anda.
-              </div>
-            ) : (
-              notifications.slice(0, 5).map((notif, idx) => (
-                <div key={idx} className="bg-[#080a1a] border border-white/5 rounded-2xl p-6 hover:border-purple-500/30 transition-all group">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        notif.tipe === 'info' ? 'bg-blue-500/10 text-blue-400' :
-                        notif.tipe === 'warning' ? 'bg-amber-500/10 text-amber-400' :
-                        'bg-red-500/10 text-red-400'
-                      }`}>
-                        {notif.tipe}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                        {notif.tanggal ? new Date(notif.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
-                      </span>
-                      {notif.target_kelas && (
-                        <span className="px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded text-[9px] font-bold">
-                          Kelas: {notif.target_kelas}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <h4 className="text-lg font-bold text-white mb-2 group-hover:text-purple-400 transition-colors">{notif.judul}</h4>
-                  <p className="text-sm text-slate-400 leading-relaxed">{notif.pesan}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
