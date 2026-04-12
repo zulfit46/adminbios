@@ -19,7 +19,7 @@ import {
 } from 'recharts';
 
 // GANTI DENGAN URL DEPLOY ADMIN BACKEND ANDA
-const API_URL = "https://script.google.com/macros/s/AKfycbxofsXy3ANp99QI2vsbKLdFBQ1aLuUU17FAJ4Tnz7LmG47z2bTXHSHYBYPy8TzUpSXD_g/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbzi-HtfbXyceKafIsQXTRs62LwxeVdwtgs2QZJzpxNsFA1v0QgFVHH037sTo8pCXfqR/exec";
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -28,6 +28,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [students, setStudents] = useState<any[]>([]);
+  const [kurangMampu, setKurangMampu] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [search, setSearch] = useState("");
@@ -182,6 +183,7 @@ export default function App() {
       const result = await res.json();
       if (result.success) {
         setStudents(result.students || []);
+        setKurangMampu(result.kurangMampu || []);
         setNotifications(result.notifications || []);
         setStats(result.stats || {});
       } else {
@@ -240,6 +242,22 @@ export default function App() {
       const jurusanA = (a.jurusan || "").toString();
       const jurusanB = (b.jurusan || "").toString();
       return jurusanA.localeCompare(jurusanB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+  const filteredKurangMampu = kurangMampu
+    .filter(s => {
+      const matchesSearch = (s.nama || "").toLowerCase().includes(search.toLowerCase()) || 
+                           (s.nisn || "").includes(search);
+      
+      const targetRombel = user?.status === 'user' ? user.rombel : rombelFilter;
+      const matchesRombel = targetRombel === "Semua" || s.rombel === targetRombel;
+      
+      return matchesSearch && matchesRombel;
+    })
+    .sort((a, b) => {
+      const rombelA = (a.rombel || "").toString();
+      const rombelB = (b.rombel || "").toString();
+      return rombelA.localeCompare(rombelB, undefined, { numeric: true, sensitivity: 'base' });
     });
 
   const uniqueRombels = ["Semua", ...new Set(students.map(s => s.rombel).filter(Boolean))].sort();
@@ -319,7 +337,9 @@ export default function App() {
           <div className="w-8 h-8 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-lg flex items-center justify-center">
             <Layout className="text-white" size={20} />
           </div>
-          <h1 className="text-lg font-bold text-white">Dashdark X</h1>
+          <h1 className="text-lg font-bold text-white">
+            {user.status === 'user' ? 'Wali Kelas' : 'Admin Dapodik'}
+          </h1>
         </div>
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -457,7 +477,7 @@ export default function App() {
               {activeTab === 'dashboard' && <DashboardView stats={displayStats} notifications={userNotifications} />}
               {activeTab === 'data' && (
                 <>
-                  {activeSubTab === 'verval' ? (
+                  {activeSubTab === 'verval' && (
                     <DataSiswaView 
                       students={filteredStudents} 
                       search={search} 
@@ -478,7 +498,68 @@ export default function App() {
                       onRefresh={fetchData}
                       user={user}
                     />
-                  ) : (
+                  )}
+                  {activeSubTab === 'profil' && (
+                    <ProfilSiswaView 
+                      students={filteredStudents} 
+                      search={search} 
+                      setSearch={setSearch} 
+                      rombelFilter={rombelFilter}
+                      setRombelFilter={setRombelFilter}
+                      uniqueRombels={uniqueRombels}
+                      onRefresh={fetchData}
+                      user={user}
+                    />
+                  )}
+                  {activeSubTab === 'ortu' && (
+                    <OrangTuaView 
+                      students={filteredStudents} 
+                      search={search} 
+                      setSearch={setSearch} 
+                      rombelFilter={rombelFilter}
+                      setRombelFilter={setRombelFilter}
+                      uniqueRombels={uniqueRombels}
+                      onRefresh={fetchData}
+                      user={user}
+                    />
+                  )}
+                  {activeSubTab === 'registrasi' && (
+                    <RegistrasiView 
+                      students={filteredStudents} 
+                      search={search} 
+                      setSearch={setSearch} 
+                      rombelFilter={rombelFilter}
+                      setRombelFilter={setRombelFilter}
+                      uniqueRombels={uniqueRombels}
+                      onRefresh={fetchData}
+                      user={user}
+                    />
+                  )}
+                  {activeSubTab === 'periodik' && (
+                    <PeriodikView 
+                      students={filteredStudents} 
+                      search={search} 
+                      setSearch={setSearch} 
+                      rombelFilter={rombelFilter}
+                      setRombelFilter={setRombelFilter}
+                      uniqueRombels={uniqueRombels}
+                      onRefresh={fetchData}
+                      user={user}
+                    />
+                  )}
+                  {activeSubTab === 'kurang_mampu' && (
+                    <KurangMampuView 
+                      data={filteredKurangMampu} 
+                      search={search} 
+                      setSearch={setSearch} 
+                      rombelFilter={rombelFilter}
+                      setRombelFilter={setRombelFilter}
+                      uniqueRombels={uniqueRombels}
+                      onRefresh={fetchData}
+                      user={user}
+                    />
+                  )}
+                  {!['verval', 'profil', 'ortu', 'registrasi', 'periodik', 'kurang_mampu'].includes(activeSubTab) && (
                     <div className="h-full flex flex-col items-center justify-center text-slate-500 py-20">
                       <Clock size={48} className="mb-4 opacity-20" />
                       <p className="text-lg font-medium">Menu Sedang Dikembangkan</p>
@@ -522,6 +603,7 @@ export default function App() {
                   onSave={handleUpdateAkses}
                   uniqueClasses={uniqueClasses}
                   loading={loading}
+                  students={students}
                 />
               )}
             </>
@@ -735,7 +817,7 @@ function DataSiswaView({
   return (
     <div className="space-y-6 pb-10 animate-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
-        <h2 className="text-2xl font-bold text-white tracking-tight">Database Siswa</h2>
+        <h2 className="text-2xl font-bold text-white tracking-tight">Verval Data Siswa</h2>
         <div className="flex flex-wrap gap-2 md:gap-3">
           <select 
             value={vervalFilter}
@@ -765,7 +847,7 @@ function DataSiswaView({
                 className="flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200"
               >
                 <option value="Semua">Verval Ijazah</option>
-                {uniqueStatusVerval.filter(v => v !== "Semua").map((v: string) => (
+                {uniqueStatusVerval.filter((v: string) => v !== "Semua").map((v: string) => (
                   <option key={v} value={v}>{v}</option>
                 ))}
               </select>
@@ -775,7 +857,7 @@ function DataSiswaView({
                 className="flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200"
               >
                 <option value="Semua">Verval KK</option>
-                {uniqueStatusKK.filter(v => v !== "Semua").map((v: string) => (
+                {uniqueStatusKK.filter((v: string) => v !== "Semua").map((v: string) => (
                   <option key={v} value={v}>{v}</option>
                 ))}
               </select>
@@ -865,10 +947,32 @@ function DataSiswaView({
                 {user.status === 'admin' && (
                   <>
                     <td className="p-5">
-                      <p className="text-sm font-bold text-slate-300">{s.status_verval || "-"}</p>
+                      {s.status_verval === "Tidak" && s.upload_ijazah ? (
+                        <a 
+                          href={s.upload_ijazah} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-sm font-bold text-red-400 hover:text-red-300 underline underline-offset-4 decoration-red-400/30 transition-colors"
+                        >
+                          Tidak
+                        </a>
+                      ) : (
+                        <p className="text-sm font-bold text-slate-300">{s.status_verval || "-"}</p>
+                      )}
                     </td>
                     <td className="p-5">
-                      <p className="text-sm font-bold text-slate-300">{s.status_kk || "-"}</p>
+                      {s.status_kk === "Tidak" && s.upload_kk ? (
+                        <a 
+                          href={s.upload_kk} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-sm font-bold text-red-400 hover:text-red-300 underline underline-offset-4 decoration-red-400/30 transition-colors"
+                        >
+                          Tidak
+                        </a>
+                      ) : (
+                        <p className="text-sm font-bold text-slate-300">{s.status_kk || "-"}</p>
+                      )}
                     </td>
                   </>
                 )}
@@ -890,100 +994,319 @@ function DataSiswaView({
   );
 }
 
-function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading }: any) {
+function ProfilSiswaView({ 
+  students, search, setSearch, 
+  rombelFilter, setRombelFilter, 
+  uniqueRombels,
+  onRefresh, user 
+}: any) {
+  const isUser = user?.status === 'user';
+
+  return (
+    <div className="space-y-6 pb-10 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+        <h2 className="text-2xl font-bold text-white tracking-tight">Profil Lengkap Siswa</h2>
+        <div className="flex flex-wrap gap-2 md:gap-3">
+          <select 
+            value={rombelFilter}
+            onChange={(e) => setRombelFilter(e.target.value)}
+            disabled={isUser}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {uniqueRombels.map((r: string) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+          <div className="relative w-full md:w-72">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <input 
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari Nama atau NISN..."
+              className="bg-[#111633] border border-white/10 rounded-xl py-2.5 pl-12 pr-4 w-full focus:outline-none focus:border-purple-500/50 text-slate-200"
+            />
+          </div>
+          <button onClick={onRefresh} className="p-2.5 bg-[#111633] hover:bg-white/5 border border-white/10 rounded-xl transition-all text-slate-400 hover:text-white">
+            <RefreshCw size={20} />
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-[#111633] border border-white/10 rounded-3xl overflow-hidden shadow-xl">
+        <div className="max-h-[600px] overflow-x-auto overflow-y-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse min-w-[2500px]">
+            <thead className="sticky top-0 z-20 bg-[#161b40] shadow-[0_1px_0_rgba(255,255,255,0.05)]">
+              <tr>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 sticky left-0 bg-[#161b40] z-30">NISN & Nama</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Tempat Lahir</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Tanggal Lahir</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">NIK</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Agama</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">No. KK</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Reg. Akta</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">JK</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Alamat</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">RT/RW</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Kelurahan</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Kecamatan</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Kab/Kota</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Kodepos</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Tinggal</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Transportasi</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">No. HP</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Email</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Rombel</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Jurusan</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+            {students.map((s: any) => (
+              <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+                <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
+                  <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
+                </td>
+                <td className="p-5 text-sm text-slate-300">{s.tempat_lahir || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.tanggal_lahir || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.nik || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.agama || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.no_kk || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.reg_akta_lahir || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.jk || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.alamat_jalan || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.rt || "0"}/{s.rw || "0"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.kel || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.kec || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.kab_kota || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.kode_pos || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.jenis_tinggal || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.alat_transportasi || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.no_hp || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.email || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.rombel || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.jurusan || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KurangMampuView({ 
+  data, search, setSearch, 
+  rombelFilter, setRombelFilter, 
+  uniqueRombels,
+  onRefresh, user 
+}: any) {
+  const isUser = user?.status === 'user';
+
+  return (
+    <div className="space-y-6 pb-10 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+        <h2 className="text-2xl font-bold text-white tracking-tight">Murid Kurang Mampu</h2>
+        <div className="flex flex-wrap gap-2 md:gap-3">
+          <select 
+            value={rombelFilter}
+            onChange={(e) => setRombelFilter(e.target.value)}
+            disabled={isUser}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {uniqueRombels.map((r: string) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+          <div className="relative w-full md:w-72">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <input 
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari Nama atau NISN..."
+              className="bg-[#111633] border border-white/10 rounded-xl py-2.5 pl-12 pr-4 w-full focus:outline-none focus:border-purple-500/50 text-slate-200"
+            />
+          </div>
+          <button onClick={onRefresh} className="p-2.5 bg-[#111633] hover:bg-white/5 border border-white/10 rounded-xl transition-all text-slate-400 hover:text-white">
+            <RefreshCw size={20} />
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-[#111633] border border-white/10 rounded-3xl overflow-hidden shadow-xl">
+        <div className="max-h-[600px] overflow-x-auto overflow-y-auto custom-scrollbar">
+          <table className={`w-full text-left border-collapse ${isUser ? 'min-w-[500px]' : 'min-w-[1500px]'}`}>
+            <thead className="sticky top-0 z-20 bg-[#161b40] shadow-[0_1px_0_rgba(255,255,255,0.05)]">
+              <tr>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 sticky left-0 bg-[#161b40] z-30">NISN & Nama</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Rombel</th>
+                {!isUser && (
+                  <>
+                    <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Kurang Mampu</th>
+                    <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Ket. KIP</th>
+                    <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">No. KIP</th>
+                    <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Nama di KIP</th>
+                    <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Kartu Lain</th>
+                    <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Nama di Kartu</th>
+                    <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">No. Kartu</th>
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+            {data.map((s: any) => (
+              <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+                <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
+                  <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
+                </td>
+                <td className="p-5 text-sm text-slate-300">{s.rombel || "-"}</td>
+                {!isUser && (
+                  <>
+                    <td className="p-5 text-sm text-slate-300">{s.kurang_mampu || "-"}</td>
+                    <td className="p-5 text-sm text-slate-300">{s.ket_kip || "-"}</td>
+                    <td className="p-5 text-sm text-slate-300">{s.no_kip || "-"}</td>
+                    <td className="p-5 text-sm text-slate-300">{s.nama_di_kip || "-"}</td>
+                    <td className="p-5 text-sm text-slate-300">{s.kartu_lain || "-"}</td>
+                    <td className="p-5 text-sm text-slate-300">{s.nama_dikartu || "-"}</td>
+                    <td className="p-5 text-sm text-slate-300">{s.no_kartu || "-"}</td>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading, students }: any) {
   const menuOptions = [
-    'dashboard', 'profil', 'orangtua', 'registrasi', 'periodik', 
+    'dashboard', 'profil', 'ortu', 'registrasi', 'periodik', 
     'kurang_mampu', 'notifikasi', 'verval', 'cetak'
   ];
 
+  // Hitung ringkasan akses per kelas
+  const classAccessSummary = uniqueClasses
+    .filter((c: string) => c !== "Semua")
+    .map((c: string) => {
+      // Cari siswa pertama di kelas ini untuk melihat akses_menu-nya
+      const studentInClass = students.find((s: any) => (s.kelas || "").toString() === c.toString());
+      const access = studentInClass?.akses_menu || "";
+      return {
+        kelas: c,
+        access: access ? access.split(',').map((m: string) => m.replace('_', ' ')).join(', ') : 'Belum diatur'
+      };
+    });
+
   return (
     <div className="space-y-10 pb-10 animate-in slide-in-from-bottom-4 duration-500">
-      <div className="max-w-3xl">
-        <h2 className="text-2xl font-bold text-white tracking-tight mb-2">Kontrol Akses Menu</h2>
-        <p className="text-slate-500 text-sm mb-8">Atur menu apa saja yang bisa diakses oleh siswa berdasarkan kelas mereka.</p>
-        
-        <div className="bg-[#111633] border border-white/10 rounded-3xl p-8 space-y-10 shadow-xl">
-          {/* Target Kelas */}
-          <div className="space-y-4">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Target Kelas</label>
-            <div className="flex flex-wrap gap-2">
-              {uniqueClasses.filter((c: string) => c !== "Semua").map((c: string) => {
-                const isSelected = form.target_kelas.split(',').filter(Boolean).includes(c);
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => {
-                      const current = form.target_kelas ? form.target_kelas.split(',').filter(Boolean) : [];
-                      let next;
-                      if (current.includes(c)) {
-                        next = current.filter((item: string) => item !== c);
-                      } else {
-                        next = [...current, c];
-                      }
-                      setForm({...form, target_kelas: next.join(',')});
-                    }}
-                    className={`px-5 py-3 rounded-2xl text-xs font-bold transition-all border ${
-                      isSelected 
-                        ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20' 
-                        : 'bg-[#080a1a] border-white/10 text-slate-400 hover:border-white/20'
-                    }`}
-                  >
-                    Kelas {c}
-                  </button>
-                );
-              })}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 space-y-8">
+          <div>
+            <h2 className="text-2xl font-bold text-white tracking-tight mb-2">Kontrol Akses Menu</h2>
+            <p className="text-slate-500 text-sm mb-8">Atur menu apa saja yang bisa diakses oleh siswa berdasarkan kelas mereka.</p>
+            
+            <div className="bg-[#111633] border border-white/10 rounded-3xl p-8 space-y-10 shadow-xl">
+              {/* Target Kelas */}
+              <div className="space-y-4">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Target Kelas</label>
+                <div className="flex flex-wrap gap-2">
+                  {uniqueClasses.filter((c: string) => c !== "Semua").map((c: string) => {
+                    const isSelected = form.target_kelas.split(',').filter(Boolean).includes(c);
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => {
+                          const current = form.target_kelas ? form.target_kelas.split(',').filter(Boolean) : [];
+                          let next;
+                          if (current.includes(c)) {
+                            next = current.filter((item: string) => item !== c);
+                          } else {
+                            next = [...current, c];
+                          }
+                          setForm({...form, target_kelas: next.join(',')});
+                        }}
+                        className={`px-5 py-3 rounded-2xl text-xs font-bold transition-all border ${
+                          isSelected 
+                            ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20' 
+                            : 'bg-[#080a1a] border-white/10 text-slate-400 hover:border-white/20'
+                        }`}
+                      >
+                        Kelas {c}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Pilih Menu */}
+              <div className="space-y-4">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Menu yang Diizinkan</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {menuOptions.map((menu) => {
+                    const isSelected = form.selected_menus.includes(menu);
+                    return (
+                      <button
+                        key={menu}
+                        type="button"
+                        onClick={() => {
+                          let next;
+                          if (form.selected_menus.includes(menu)) {
+                            next = form.selected_menus.filter((m: string) => m !== menu);
+                          } else {
+                            next = [...form.selected_menus, menu];
+                          }
+                          setForm({...form, selected_menus: next});
+                        }}
+                        className={`flex items-center gap-3 p-4 rounded-2xl text-xs font-bold transition-all border ${
+                          isSelected 
+                            ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' 
+                            : 'bg-[#080a1a] border-white/10 text-slate-500 hover:border-white/20'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                          isSelected ? 'bg-emerald-500 border-emerald-500' : 'border-slate-700'
+                        }`}>
+                          {isSelected && <CheckCircle size={10} className="text-white" />}
+                        </div>
+                        <span className="capitalize">{menu.replace('_', ' ')}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button 
+                onClick={onSave}
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-blue-600/20 active:scale-[0.98]"
+              >
+                {loading ? <RefreshCw className="animate-spin" size={20} /> : (
+                  <>
+                    <ShieldCheck size={20} /> Simpan Pengaturan Akses
+                  </>
+                )}
+              </button>
             </div>
           </div>
+        </div>
 
-          {/* Pilih Menu */}
+        {/* Ringkasan Akses */}
+        <div className="space-y-6">
+          <h3 className="text-lg font-bold text-white tracking-tight">Ringkasan Akses Saat Ini</h3>
           <div className="space-y-4">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Menu yang Diizinkan</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {menuOptions.map((menu) => {
-                const isSelected = form.selected_menus.includes(menu);
-                return (
-                  <button
-                    key={menu}
-                    type="button"
-                    onClick={() => {
-                      let next;
-                      if (form.selected_menus.includes(menu)) {
-                        next = form.selected_menus.filter((m: string) => m !== menu);
-                      } else {
-                        next = [...form.selected_menus, menu];
-                      }
-                      setForm({...form, selected_menus: next});
-                    }}
-                    className={`flex items-center gap-3 p-4 rounded-2xl text-xs font-bold transition-all border ${
-                      isSelected 
-                        ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' 
-                        : 'bg-[#080a1a] border-white/10 text-slate-500 hover:border-white/20'
-                    }`}
-                  >
-                    <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
-                      isSelected ? 'bg-emerald-500 border-emerald-500' : 'border-slate-700'
-                    }`}>
-                      {isSelected && <CheckCircle size={10} className="text-white" />}
-                    </div>
-                    <span className="capitalize">{menu.replace('_', ' ')}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {classAccessSummary.map((item: any) => (
+              <div key={item.kelas} className="bg-[#111633] border border-white/10 rounded-2xl p-5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Kelas {item.kelas}</span>
+                  <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
+                </div>
+                <p className="text-sm font-bold text-white capitalize">{item.access}</p>
+              </div>
+            ))}
           </div>
-
-          <button 
-            onClick={onSave}
-            disabled={loading}
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-blue-600/20 active:scale-[0.98]"
-          >
-            {loading ? <RefreshCw className="animate-spin" size={20} /> : (
-              <>
-                <ShieldCheck size={20} /> Simpan Pengaturan Akses
-              </>
-            )}
-          </button>
         </div>
       </div>
     </div>
@@ -1185,6 +1508,242 @@ function NavItem({ active, onClick, icon, label, hasSubmenu, isOpen }: any) {
       <span className="font-bold text-sm tracking-tight">{label}</span>
       {hasSubmenu && <ChevronRight size={14} className={`ml-auto text-slate-600 group-hover:text-slate-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />}
     </button>
+  );
+}
+
+function OrangTuaView({ 
+  students, search, setSearch, 
+  rombelFilter, setRombelFilter, 
+  uniqueRombels,
+  onRefresh, user 
+}: any) {
+  const isUser = user?.status === 'user';
+
+  return (
+    <div className="space-y-6 pb-10 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+        <h2 className="text-2xl font-bold text-white tracking-tight">Data Orang Tua</h2>
+        <div className="flex flex-wrap gap-2 md:gap-3">
+          <select 
+            value={rombelFilter}
+            onChange={(e) => setRombelFilter(e.target.value)}
+            disabled={isUser}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {uniqueRombels.map((r: string) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+          <div className="relative w-full md:w-72">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <input 
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari Nama atau NISN..."
+              className="bg-[#111633] border border-white/10 rounded-xl py-2.5 pl-12 pr-4 w-full focus:outline-none focus:border-purple-500/50 text-slate-200"
+            />
+          </div>
+          <button onClick={onRefresh} className="p-2.5 bg-[#111633] hover:bg-white/5 border border-white/10 rounded-xl transition-all text-slate-400 hover:text-white">
+            <RefreshCw size={20} />
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-[#111633] border border-white/10 rounded-3xl overflow-hidden shadow-xl">
+        <div className="max-h-[600px] overflow-x-auto overflow-y-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse min-w-[2000px]">
+            <thead className="sticky top-0 z-20 bg-[#161b40] shadow-[0_1px_0_rgba(255,255,255,0.05)]">
+              <tr>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 sticky left-0 bg-[#161b40] z-30">NISN & Nama</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Nama Ayah</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">NIK Ayah</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Tahun Lahir Ayah</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Pendidikan Ayah</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Pekerjaan Ayah</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Penghasilan Ayah</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Nama Ibu</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">NIK Ibu</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Tahun Lahir Ibu</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Pendidikan Ibu</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Pekerjaan Ibu</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Penghasilan Ibu</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+            {students.map((s: any) => (
+              <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+                <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
+                  <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
+                </td>
+                <td className="p-5 text-sm text-slate-300">{s.nama_ayah || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.nik_ayah || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.tahun_lahir_ayah || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.jenjang_pendidikan_ayah || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.pekerjaan_ayah || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.penghasilan_ayah || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.nama_ibu || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.nik_ibu || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.tahun_lahir_ibu || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.jenjang_pendidikan_ibu || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.pekerjaan_ibu || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.penghasilan_ibu || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RegistrasiView({ 
+  students, search, setSearch, 
+  rombelFilter, setRombelFilter, 
+  uniqueRombels,
+  onRefresh, user 
+}: any) {
+  const isUser = user?.status === 'user';
+
+  return (
+    <div className="space-y-6 pb-10 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+        <h2 className="text-2xl font-bold text-white tracking-tight">Data Registrasi</h2>
+        <div className="flex flex-wrap gap-2 md:gap-3">
+          <select 
+            value={rombelFilter}
+            onChange={(e) => setRombelFilter(e.target.value)}
+            disabled={isUser}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {uniqueRombels.map((r: string) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+          <div className="relative w-full md:w-72">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <input 
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari Nama atau NISN..."
+              className="bg-[#111633] border border-white/10 rounded-xl py-2.5 pl-12 pr-4 w-full focus:outline-none focus:border-purple-500/50 text-slate-200"
+            />
+          </div>
+          <button onClick={onRefresh} className="p-2.5 bg-[#111633] hover:bg-white/5 border border-white/10 rounded-xl transition-all text-slate-400 hover:text-white">
+            <RefreshCw size={20} />
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-[#111633] border border-white/10 rounded-3xl overflow-hidden shadow-xl">
+        <div className="max-h-[600px] overflow-x-auto overflow-y-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse min-w-[1200px]">
+            <thead className="sticky top-0 z-20 bg-[#161b40] shadow-[0_1px_0_rgba(255,255,255,0.05)]">
+              <tr>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 sticky left-0 bg-[#161b40] z-30">NISN & Nama</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Sekolah Asal</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Hobby</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Cita-cita</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">No. Peserta Ujian</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">No. Seri Ijazah</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+            {students.map((s: any) => (
+              <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+                <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
+                  <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
+                </td>
+                <td className="p-5 text-sm text-slate-300">{s.sekolah_asal || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.id_hobby || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.id_cita || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.no_peserta_ujian || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.no_seri_ijazah || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PeriodikView({ 
+  students, search, setSearch, 
+  rombelFilter, setRombelFilter, 
+  uniqueRombels,
+  onRefresh, user 
+}: any) {
+  const isUser = user?.status === 'user';
+
+  return (
+    <div className="space-y-6 pb-10 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+        <h2 className="text-2xl font-bold text-white tracking-tight">Data Periodik</h2>
+        <div className="flex flex-wrap gap-2 md:gap-3">
+          <select 
+            value={rombelFilter}
+            onChange={(e) => setRombelFilter(e.target.value)}
+            disabled={isUser}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {uniqueRombels.map((r: string) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+          <div className="relative w-full md:w-72">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <input 
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari Nama atau NISN..."
+              className="bg-[#111633] border border-white/10 rounded-xl py-2.5 pl-12 pr-4 w-full focus:outline-none focus:border-purple-500/50 text-slate-200"
+            />
+          </div>
+          <button onClick={onRefresh} className="p-2.5 bg-[#111633] hover:bg-white/5 border border-white/10 rounded-xl transition-all text-slate-400 hover:text-white">
+            <RefreshCw size={20} />
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-[#111633] border border-white/10 rounded-3xl overflow-hidden shadow-xl">
+        <div className="max-h-[600px] overflow-x-auto overflow-y-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse min-w-[1200px]">
+            <thead className="sticky top-0 z-20 bg-[#161b40] shadow-[0_1px_0_rgba(255,255,255,0.05)]">
+              <tr>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 sticky left-0 bg-[#161b40] z-30">NISN & Nama</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Tinggi Badan</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Berat Badan</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Lingkar Kepala</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Saudara Kandung</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Anak Ke</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Jarak Rumah</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Jarak (KM)</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Waktu Tempuh (Menit)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+            {students.map((s: any) => (
+              <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+                <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
+                  <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
+                </td>
+                <td className="p-5 text-sm text-slate-300">{s.tinggi_badan || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.berat_badan || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.lingkar_kepala || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.jumlah_saudara_kandung || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.anak_ke || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.jarak_rumah_ke_sekolah || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.sebutkan_berapa_kilometer || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.waktu_tempuh_ke_sekolah_menit || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
   );
 }
 
