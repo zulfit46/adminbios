@@ -1379,6 +1379,7 @@ function NotifView({ form, setForm, notifications, onSend, onDelete, onEdit, isE
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">NISN Target (Opsional)</label>
               <input 
                 value={form.nisn_target} onChange={(e) => setForm({...form, nisn_target: e.target.value})}
+                maxLength={10}
                 className="w-full bg-[#080a1a] border border-white/10 rounded-2xl py-4 px-6 focus:outline-none focus:border-purple-500/50 text-slate-200 transition-all"
                 placeholder="Kosongkan untuk semua"
               />
