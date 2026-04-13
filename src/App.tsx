@@ -893,6 +893,7 @@ function DataSiswaView({
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead className="sticky top-0 z-20 bg-[#161b40] shadow-[0_1px_0_rgba(255,255,255,0.05)]">
               <tr>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 w-12">No</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Siswa</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Rombel / Jurusan</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Login</th>
@@ -909,8 +910,9 @@ function DataSiswaView({
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-            {students.map((s: any) => (
+            {students.map((s: any, idx: number) => (
               <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+                <td className="p-5 text-sm font-bold text-slate-500">{idx + 1}</td>
                 <td className="p-5">
                   <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
