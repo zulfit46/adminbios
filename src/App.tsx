@@ -42,6 +42,8 @@ export default function App() {
   const [editingNotifRow, setEditingNotifRow] = useState<number | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [notifRowToDelete, setNotifRowToDelete] = useState<number | null>(null);
+  const [siswaToDelete, setSiswaToDelete] = useState<string | null>(null);
+  const [showSiswaDeleteConfirm, setShowSiswaDeleteConfirm] = useState(false);
   const [aksesForm, setAksesForm] = useState({ target_kelas: '', selected_menus: [] as string[] });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -131,6 +133,33 @@ export default function App() {
       setError("Gagal terhubung ke server.");
     }
     setNotifRowToDelete(null);
+    setLoading(false);
+  };
+
+  const handleDeleteSiswa = (nisn: string) => {
+    setSiswaToDelete(nisn);
+    setShowSiswaDeleteConfirm(true);
+  };
+
+  const confirmDeleteSiswa = async () => {
+    if (!siswaToDelete) return;
+    setLoading(true);
+    setShowSiswaDeleteConfirm(false);
+    try {
+      const res = await fetch(`${API_URL}?action=delete_student`, {
+        method: 'POST',
+        body: JSON.stringify({ nisn: siswaToDelete })
+      });
+      const result = await res.json();
+      if (result.success) {
+        fetchData();
+      } else {
+        setError(result.error || "Gagal menghapus data siswa");
+      }
+    } catch (e: any) {
+      setError("Gagal terhubung ke server.");
+    }
+    setSiswaToDelete(null);
     setLoading(false);
   };
 
@@ -508,6 +537,7 @@ export default function App() {
                       setRombelFilter={setRombelFilter}
                       uniqueRombels={uniqueRombels}
                       onRefresh={fetchData}
+                      onDelete={handleDeleteSiswa}
                       user={user}
                     />
                   )}
@@ -631,6 +661,35 @@ export default function App() {
               </button>
               <button 
                 onClick={confirmDeleteNotif}
+                className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-red-600/20"
+              >
+                Ya, Hapus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Konfirmasi Hapus Siswa */}
+      {showSiswaDeleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-[#111633] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertCircle size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-white text-center mb-2">Hapus Data Siswa?</h3>
+            <p className="text-slate-400 text-center text-sm mb-8">
+              Tindakan ini tidak dapat dibatalkan. Data siswa dengan NISN {siswaToDelete} akan dihapus permanen.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowSiswaDeleteConfirm(false)}
+                className="flex-1 py-3 px-4 bg-white/5 hover:bg-white/10 text-slate-300 font-bold rounded-xl transition-all"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={confirmDeleteSiswa}
                 className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-red-600/20"
               >
                 Ya, Hapus
@@ -982,7 +1041,6 @@ function DataSiswaView({
                   <td className="p-5 text-right">
                     <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button className="p-2 text-slate-500 hover:text-purple-400 transition-colors"><ChevronRight size={18}/></button>
-                      <button className="p-2 text-slate-500 hover:text-red-400 transition-colors"><Trash2 size={18}/></button>
                     </div>
                   </td>
                 )}
@@ -1000,9 +1058,10 @@ function ProfilSiswaView({
   students, search, setSearch, 
   rombelFilter, setRombelFilter, 
   uniqueRombels,
-  onRefresh, user 
+  onRefresh, onDelete, user 
 }: any) {
   const isUser = user?.status === 'user';
+  const isAdmin = user?.status === 'admin';
 
   return (
     <div className="space-y-6 pb-10 animate-in slide-in-from-bottom-4 duration-500">
@@ -1058,6 +1117,7 @@ function ProfilSiswaView({
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Email</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Rombel</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Jurusan</th>
+                {isAdmin && <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 text-right sticky right-0 bg-[#161b40] z-30">Aksi</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -1086,6 +1146,17 @@ function ProfilSiswaView({
                 <td className="p-5 text-sm text-slate-300">{s.email || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.rombel || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.jurusan || "-"}</td>
+                {isAdmin && (
+                  <td className="p-5 text-right sticky right-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-l border-white/5">
+                    <button 
+                      onClick={() => onDelete(s.nisn)}
+                      className="p-2 text-slate-500 hover:text-red-400 transition-colors"
+                      title="Hapus Siswa"
+                    >
+                      <Trash2 size={18}/>
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
