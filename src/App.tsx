@@ -170,17 +170,18 @@ export default function App() {
     }
     setLoading(true);
     try {
+      // Jika memilih "ortu" di UI, disimpan sebagai "orangtua" di spreadsheet
+      const formattedMenus = aksesForm.selected_menus.map((m: string) => m === 'ortu' ? 'orangtua' : m);
       const res = await fetch(`${API_URL}?action=update_akses_bulk`, {
         method: 'POST',
         body: JSON.stringify({
           target_kelas: aksesForm.target_kelas,
-          akses_menu: aksesForm.selected_menus.join(',')
+          akses_menu: formattedMenus.join(',')
         })
       });
       const result = await res.json();
       if (result.success) {
         setError(null);
-        // alert removed
         fetchData();
       } else {
         setError(result.error || "Gagal memperbarui akses");
@@ -289,10 +290,44 @@ export default function App() {
       return rombelA.localeCompare(rombelB, undefined, { numeric: true, sensitivity: 'base' });
     });
 
+  const getClassFromStudent = (s: any) => {
+    if (s.kelas && s.kelas !== "-" && s.kelas.toString().trim() !== "") {
+      return s.kelas.toString().trim();
+    }
+    if (s.rombel && s.rombel !== "-" && s.rombel.toString().trim() !== "") {
+      const r = s.rombel.toString().trim();
+      const numMatch = r.match(/^(10|11|12|[789])/);
+      if (numMatch) return numMatch[0];
+      
+      const romanMatch = r.match(/^(XII|XI|X|VII|VIII|IX)\b/i);
+      if (romanMatch) {
+        const rm = romanMatch[0].toUpperCase();
+        if (rm === 'X') return '10';
+        if (rm === 'XI') return '11';
+        if (rm === 'XII') return '12';
+        return rm;
+      }
+      return r;
+    }
+    return null;
+  };
+
   const uniqueRombels = ["Semua", ...new Set(students.map(s => s.rombel).filter(Boolean))].sort();
   const uniqueStatusVerval = ["Semua", ...new Set(students.map(s => s.status_verval).filter(Boolean))].sort();
   const uniqueStatusKK = ["Semua", ...new Set(students.map(s => s.status_kk).filter(Boolean))].sort();
-  const uniqueClasses = ["Semua", ...new Set(students.map(s => s.kelas).filter(Boolean))].sort();
+
+  const extractedClasses: string[] = Array.from(
+    new Set(
+      students
+        .map(s => getClassFromStudent(s))
+        .filter((c): c is string => typeof c === 'string' && c.length > 0 && c !== "-")
+    )
+  );
+  const defaultClasses: string[] = ["10", "11", "12"];
+  const validClasses: string[] = Array.from(new Set<string>([...extractedClasses, ...defaultClasses]))
+    .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+  const uniqueClasses = ["Semua", ...validClasses];
 
   // Calculate stats based on user scope (Admin = All, User = Their Rombel)
   const studentsInScope = user?.status === 'user' 
@@ -351,7 +386,10 @@ export default function App() {
     if (user?.status === 'admin') return true;
     if (!user?.akses_menu) return false;
     const allowed = user.akses_menu.split(',').map((m: any) => m.trim().toLowerCase());
-    return allowed.includes(menu.toLowerCase());
+    const mLower = menu.toLowerCase();
+    return allowed.includes(mLower) ||
+           (mLower === 'ortu' && allowed.includes('orangtua')) ||
+           (mLower === 'orangtua' && allowed.includes('ortu'));
   };
 
   if (!user) {
@@ -1264,11 +1302,21 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading, students
     .filter((c: string) => c !== "Semua")
     .map((c: string) => {
       // Cari siswa pertama di kelas ini untuk melihat akses_menu-nya
-      const studentInClass = students.find((s: any) => (s.kelas || "").toString() === c.toString());
+      const studentInClass = students.find((s: any) => {
+        const studentClass = (s.kelas && s.kelas !== "-") ? s.kelas.toString().trim() : "";
+        const studentRombel = (s.rombel || "").toString().trim();
+        return studentClass === c || studentRombel.startsWith(c) || (c === "10" && studentRombel.startsWith("X ")) || (c === "11" && studentRombel.startsWith("XI ")) || (c === "12" && studentRombel.startsWith("XII "));
+      });
       const access = studentInClass?.akses_menu || "";
       return {
         kelas: c,
-        access: access ? access.split(',').map((m: string) => m.replace('_', ' ')).join(', ') : 'Belum diatur'
+        access: access 
+          ? access.split(',').map((m: string) => {
+              const trimmed = m.trim().toLowerCase();
+              if (trimmed === 'orangtua') return 'ortu';
+              return trimmed.replace('_', ' ');
+            }).join(', ') 
+          : 'Belum diatur'
       };
     });
 
@@ -1283,7 +1331,26 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading, students
             <div className="bg-[#111633] border border-white/10 rounded-3xl p-8 space-y-10 shadow-xl">
               {/* Target Kelas */}
               <div className="space-y-4">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Target Kelas</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Target Kelas</label>
+                  <div className="flex gap-2 text-[11px] font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setForm({...form, target_kelas: uniqueClasses.filter((c: string) => c !== "Semua").join(',')})}
+                      className="text-blue-400 hover:text-blue-300 transition-colors font-semibold"
+                    >
+                      Pilih Semua
+                    </button>
+                    <span className="text-slate-600">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setForm({...form, target_kelas: ''})}
+                      className="text-slate-400 hover:text-slate-300 transition-colors"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {uniqueClasses.filter((c: string) => c !== "Semua").map((c: string) => {
                     const isSelected = form.target_kelas.split(',').filter(Boolean).includes(c);
@@ -1316,7 +1383,26 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading, students
 
               {/* Pilih Menu */}
               <div className="space-y-4">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Menu yang Diizinkan</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Menu yang Diizinkan</label>
+                  <div className="flex gap-2 text-[11px] font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setForm({...form, selected_menus: [...menuOptions]})}
+                      className="text-blue-400 hover:text-blue-300 transition-colors font-semibold"
+                    >
+                      Pilih Semua
+                    </button>
+                    <span className="text-slate-600">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setForm({...form, selected_menus: []})}
+                      className="text-slate-400 hover:text-slate-300 transition-colors"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {menuOptions.map((menu) => {
                     const isSelected = form.selected_menus.includes(menu);
