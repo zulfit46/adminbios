@@ -23,8 +23,8 @@ const API_URL = "https://script.google.com/macros/s/AKfycbzi-HtfbXyceKafIsQXTRs6
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [activeSubTab, setActiveSubTab] = useState('verval');
+  const [activeTab, setActiveTab] = useState('data');
+  const [activeSubTab, setActiveSubTab] = useState('rekap');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [students, setStudents] = useState<any[]>([]);
@@ -59,16 +59,20 @@ export default function App() {
         if (result.user.status === 'user' && result.user.rombel) {
           setRombelFilter(result.user.rombel);
         }
+        // Langsung tampilkan menu Data Siswa dan sub-menu Rekap Inputan
+        setActiveTab('data');
         if (result.user.status === 'user' && result.user.akses_menu) {
           const allowed = result.user.akses_menu.split(',').map((m: string) => m.trim().toLowerCase());
-          if (allowed.length > 0) {
-            // Set sub-tab aktif ke menu pertama yang diizinkan
-            const firstMenu = allowed[0];
+          const hasRekap = allowed.includes('rekap') || allowed.includes('rekap_inputan');
+          if (hasRekap || allowed.length === 0) {
+            setActiveSubTab('rekap');
+          } else {
             const validMenus = ['rekap', 'profil', 'ortu', 'registrasi', 'periodik', 'kurang_mampu', 'verval'];
-            if (validMenus.includes(firstMenu)) {
-              setActiveSubTab(firstMenu);
-            }
+            const firstMenu = allowed.find((m: string) => validMenus.includes(m));
+            setActiveSubTab(firstMenu || 'rekap');
           }
+        } else {
+          setActiveSubTab('rekap');
         }
         fetchData();
       } else {
@@ -384,12 +388,12 @@ export default function App() {
 
   const isAllowed = (menu: string) => {
     if (user?.status === 'admin') return true;
-    if (!user?.akses_menu) return false;
+    if (!user?.akses_menu) return true;
     const allowed = user.akses_menu.split(',').map((m: any) => m.trim().toLowerCase());
     const mLower = menu.toLowerCase();
     return allowed.includes(mLower) ||
-           (mLower === 'ortu' && allowed.includes('orangtua')) ||
-           (mLower === 'orangtua' && allowed.includes('ortu')) ||
+           (mLower === 'ortu' && (allowed.includes('orangtua') || allowed.includes('ortu'))) ||
+           (mLower === 'orangtua' && (allowed.includes('ortu') || allowed.includes('orangtua'))) ||
            (mLower === 'rekap' && (allowed.includes('rekap_inputan') || allowed.includes('rekap')));
   };
 
@@ -461,13 +465,13 @@ export default function App() {
             
             {activeTab === 'data' && (
               <div className="ml-6 pl-4 border-l border-white/10 space-y-1 mt-1 mb-2">
-                {isAllowed('rekap') && <SubNavItem active={activeSubTab === 'rekap'} onClick={() => setActiveSubTab('rekap')} label="Rekap Inputan" />}
-                {isAllowed('profil') && <SubNavItem active={activeSubTab === 'profil'} onClick={() => setActiveSubTab('profil')} label="Profil Siswa" />}
-                {isAllowed('ortu') && <SubNavItem active={activeSubTab === 'ortu'} onClick={() => setActiveSubTab('ortu')} label="Data Orang Tua" />}
-                {isAllowed('registrasi') && <SubNavItem active={activeSubTab === 'registrasi'} onClick={() => setActiveSubTab('registrasi')} label="Registrasi" />}
-                {isAllowed('periodik') && <SubNavItem active={activeSubTab === 'periodik'} onClick={() => setActiveSubTab('periodik')} label="Data Periodik" />}
-                {isAllowed('kurang_mampu') && <SubNavItem active={activeSubTab === 'kurang_mampu'} onClick={() => setActiveSubTab('kurang_mampu')} label="Murid Kurang Mampu" />}
-                {isAllowed('verval') && <SubNavItem active={activeSubTab === 'verval'} onClick={() => setActiveSubTab('verval')} label="Verval Data" />}
+                {isAllowed('rekap') && <SubNavItem active={activeSubTab === 'rekap'} onClick={() => { setActiveSubTab('rekap'); setIsSidebarOpen(false); }} label="Rekap Inputan" />}
+                {isAllowed('profil') && <SubNavItem active={activeSubTab === 'profil'} onClick={() => { setActiveSubTab('profil'); setIsSidebarOpen(false); }} label="Profil Siswa" />}
+                {isAllowed('ortu') && <SubNavItem active={activeSubTab === 'ortu'} onClick={() => { setActiveSubTab('ortu'); setIsSidebarOpen(false); }} label="Data Orang Tua" />}
+                {isAllowed('registrasi') && <SubNavItem active={activeSubTab === 'registrasi'} onClick={() => { setActiveSubTab('registrasi'); setIsSidebarOpen(false); }} label="Registrasi" />}
+                {isAllowed('periodik') && <SubNavItem active={activeSubTab === 'periodik'} onClick={() => { setActiveSubTab('periodik'); setIsSidebarOpen(false); }} label="Data Periodik" />}
+                {isAllowed('kurang_mampu') && <SubNavItem active={activeSubTab === 'kurang_mampu'} onClick={() => { setActiveSubTab('kurang_mampu'); setIsSidebarOpen(false); }} label="Murid Kurang Mampu" />}
+                {isAllowed('verval') && <SubNavItem active={activeSubTab === 'verval'} onClick={() => { setActiveSubTab('verval'); setIsSidebarOpen(false); }} label="Verval Data" />}
               </div>
             )}
           </div>
@@ -543,7 +547,7 @@ export default function App() {
             </div>
           ) : (
             <>
-              {activeTab === 'dashboard' && <DashboardView stats={displayStats} notifications={userNotifications} />}
+              {activeTab === 'dashboard' && <DashboardView stats={displayStats} notifications={userNotifications} user={user} students={students} />}
               {activeTab === 'data' && (
                 <>
                   {activeSubTab === 'verval' && (
@@ -817,7 +821,277 @@ function LoginView({ onLogin, loading, error }: any) {
   );
 }
 
-function DashboardView({ stats, notifications }: { stats: any, notifications: any[] }) {
+function DashboardView({ stats, notifications, user, students }: { stats: any, notifications: any[], user?: any, students?: any[] }) {
+  const isUser = user?.status === 'user';
+
+  if (isUser) {
+    const student = students?.find(s => s.nisn?.toString() === user?.login?.toString() || s.nama === user?.nama) || user || {};
+
+    const REQUIRED_FIELDS = {
+      profil: [
+        'nama', 'jk', 'nipd', 'nisn', 'nik', 'agama',
+        'tempat_lahir', 'tanggal_lahir', 'no_kk',
+        'alamat_jalan', 'wilayah',
+        'jenis_tinggal', 'alat_transportasi', 'no_hp', 'jurusan'
+      ],
+      ortu: [
+        'nama_ayah', 'nik_ayah', 'tahun_lahir_ayah', 'jenjang_pendidikan_ayah', 'pekerjaan_ayah', 'penghasilan_ayah',
+        'nama_ibu', 'nik_ibu', 'tahun_lahir_ibu', 'jenjang_pendidikan_ibu', 'pekerjaan_ibu', 'penghasilan_ibu'
+      ],
+      registrasi: [
+        'sekolah_asal', 'id_hobby', 'id_cita'
+      ],
+      periodik: [
+        'tinggi_badan', 'berat_badan', 'lingkar_kepala', 'jumlah_saudara_kandung', 
+        'anak_ke', 'jarak_rumah_ke_sekolah', 'sebutkan_berapa_kilometer', 'waktu_tempuh_ke_sekolah_menit'
+      ]
+    };
+
+    const isValValid = (val: any) => {
+      if (val === undefined || val === null) return false;
+      const str = val.toString().trim();
+      return str !== "" && str !== "-";
+    };
+
+    const isParentMeninggal = (statusVal: any, kerjaVal: any) => {
+      const s = statusVal ? statusVal.toString().trim().toLowerCase() : "";
+      const k = kerjaVal ? kerjaVal.toString().trim().toLowerCase() : "";
+      return s.includes("wafat") || s.includes("meninggal") || k.includes("meninggal") || k.includes("wafat");
+    };
+
+    const getOrtuCompletion = (st: any) => {
+      if (!st) return 0;
+
+      // Ayah
+      const ayahWafat = isParentMeninggal(st.status_hidup_ayah, st.pekerjaan_ayah);
+      let ayahTotal = 0;
+      let ayahValid = 0;
+
+      if (ayahWafat) {
+        ayahTotal = 2;
+        if (isValValid(st.nama_ayah)) ayahValid++;
+        if (isValValid(st.status_hidup_ayah) || isParentMeninggal(st.status_hidup_ayah, st.pekerjaan_ayah)) ayahValid++;
+      } else {
+        ayahTotal = 7;
+        if (isValValid(st.status_hidup_ayah)) ayahValid++;
+        if (isValValid(st.nama_ayah)) ayahValid++;
+        if (isValValid(st.nik_ayah)) ayahValid++;
+        if (isValValid(st.tahun_lahir_ayah)) ayahValid++;
+        if (isValValid(st.jenjang_pendidikan_ayah)) ayahValid++;
+        if (isValValid(st.pekerjaan_ayah)) ayahValid++;
+        if (isValValid(st.penghasilan_ayah)) ayahValid++;
+      }
+
+      // Ibu
+      const ibuWafat = isParentMeninggal(st.status_hidup_ibu, st.pekerjaan_ibu);
+      let ibuTotal = 0;
+      let ibuValid = 0;
+
+      if (ibuWafat) {
+        ibuTotal = 2;
+        if (isValValid(st.nama_ibu)) ibuValid++;
+        if (isValValid(st.status_hidup_ibu) || isParentMeninggal(st.status_hidup_ibu, st.pekerjaan_ibu)) ibuValid++;
+      } else {
+        ibuTotal = 7;
+        if (isValValid(st.status_hidup_ibu)) ibuValid++;
+        if (isValValid(st.nama_ibu)) ibuValid++;
+        if (isValValid(st.nik_ibu)) ibuValid++;
+        if (isValValid(st.tahun_lahir_ibu)) ibuValid++;
+        if (isValValid(st.jenjang_pendidikan_ibu)) ibuValid++;
+        if (isValValid(st.pekerjaan_ibu)) ibuValid++;
+        if (isValValid(st.penghasilan_ibu)) ibuValid++;
+      }
+
+      const totalReq = ayahTotal + ibuTotal;
+      const totalVal = ayahValid + ibuValid;
+      return totalReq > 0 ? Math.round((totalVal / totalReq) * 100) : 0;
+    };
+
+    const getPeriodikCompletion = (st: any) => {
+      if (!st) return 0;
+      let validCount = 0;
+
+      // 1. Tinggi Badan (cm)
+      if (isValValid(st.tinggi_badan) || isValValid(st.tinggi)) validCount++;
+      // 2. Berat Badan (kg)
+      if (isValValid(st.berat_badan) || isValValid(st.berat)) validCount++;
+      // 3. Lingkar Kepala (cm)
+      if (isValValid(st.lingkar_kepala) || isValValid(st.lingkar)) validCount++;
+      // 4. Jumlah Saudara Kandung
+      if (isValValid(st.jumlah_saudara_kandung) || isValValid(st.saudara)) validCount++;
+      // 5. Anak Ke-
+      if (isValValid(st.anak_ke) || isValValid(st.anak_ke_berapa)) validCount++;
+      // 6. Jarak Tempat Tinggal ke Sekolah
+      const jarakVal = (st.jarak_rumah_ke_sekolah || st.jarak_tempat_tinggal_ke_sekolah || st.jarak || "").toString().trim();
+      if (isValValid(jarakVal)) validCount++;
+      // 7. Waktu Tempuh ke Sekolah (Menit)
+      if (isValValid(st.waktu_tempuh_ke_sekolah_menit) || isValValid(st.waktu_tempuh)) validCount++;
+
+      // Logika Kondisional untuk Jarak
+      const jarakLower = jarakVal.toLowerCase();
+      const isLebihDari1Km = jarakLower.includes("lebih") || jarakLower.includes(">") || jarakLower.includes("lebih dari 1");
+
+      let totalFields = 7;
+      if (isLebihDari1Km) {
+        totalFields = 8;
+        if (isValValid(st.sebutkan_berapa_kilometer) || isValValid(st.sebutkan_berapa_km) || isValValid(st.jarak_km)) {
+          validCount++;
+        }
+      }
+
+      return Math.round((validCount / totalFields) * 100);
+    };
+
+    const getCompletion = (fields: string[]): number => {
+      if (!fields || fields.length === 0) return 0;
+      let count = 0;
+      fields.forEach(f => {
+        if (f === 'wilayah') {
+          if (isValValid(student.nama_wil) || isValValid(student.wilayah) || isValValid(student.kel) || isValValid(student.kec) || isValValid(student.kab_kota)) count++;
+        } else if (f === 'nipd') {
+          if (isValValid(student.nipd) || isValValid(student.nipd_nisn) || isValValid(student.login) || isValValid(student.nisn)) count++;
+        } else if (f === 'jurusan') {
+          if (isValValid(student.jurusan) || isValValid(student.rombel)) count++;
+        } else if (f === 'sebutkan_berapa_kilometer') {
+          if (isValValid(student.sebutkan_berapa_kilometer) || isValValid(student.jarak_rumah_ke_sekolah)) count++;
+        } else if (f === 'waktu_tempuh_ke_sekolah_menit') {
+          if (isValValid(student.waktu_tempuh_ke_sekolah_menit) || isValValid(student.waktu_tempuh)) count++;
+        } else if (f === 'id_hobby') {
+          if (isValValid(student.id_hobby) || isValValid(student.hobi) || isValValid(student.hobby)) count++;
+        } else if (f === 'id_cita') {
+          if (isValValid(student.id_cita) || isValValid(student.id_cita_cita) || isValValid(student.cita_cita) || isValValid(student.cita)) count++;
+        } else {
+          if (isValValid(student[f])) count++;
+        }
+      });
+      return Math.round((count / fields.length) * 100);
+    };
+
+    const profilPct = getCompletion(REQUIRED_FIELDS.profil);
+    const ortuPct = getOrtuCompletion(student);
+    const regPct = getCompletion(REQUIRED_FIELDS.registrasi);
+    const periodikPct = getPeriodikCompletion(student);
+    const totalPct = Math.round((profilPct + ortuPct + regPct + periodikPct) / 4);
+
+    return (
+      <div className="space-y-8 pb-10 animate-in fade-in duration-700">
+        <div>
+          <h2 className="text-3xl font-bold text-white tracking-tight">Halo, {user?.nama || 'Siswa'}!</h2>
+          <p className="text-slate-400 text-sm mt-1">Selamat datang di portal mandiri Dapodik SMKN 1 Palopo.</p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="bg-[#111633] border border-white/10 rounded-2xl p-6 relative overflow-hidden">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Kelengkapan Data</p>
+            <div className="flex items-baseline gap-3">
+              <span className="text-3xl font-bold text-white">{totalPct}%</span>
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                totalPct === 100 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+              }`}>
+                {totalPct === 100 ? 'Sempurna' : 'Perlu Dilengkapi'}
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-[#111633] border border-white/10 rounded-2xl p-6">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">NIPD</p>
+            <span className="text-3xl font-bold text-white">{student.nipd || student.login || user?.login || '-'}</span>
+          </div>
+
+          <div className="bg-[#111633] border border-white/10 rounded-2xl p-6">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">NISN</p>
+            <span className="text-3xl font-bold text-white">{student.nisn || user?.login || '-'}</span>
+          </div>
+
+          <div className="bg-[#111633] border border-white/10 rounded-2xl p-6">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Rombel</p>
+            <span className="text-3xl font-bold text-white">{student.rombel || user?.rombel || '-'}</span>
+          </div>
+        </div>
+
+        <div className="bg-[#111633] border border-white/10 rounded-3xl p-8 space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-lg text-white">Status Kelengkapan Data (Field Wajib)</h3>
+            <span className="text-xs text-slate-500 italic">Dihitung otomatis berdasarkan keterisian data</span>
+          </div>
+
+          <div className="space-y-4">
+            <div className="bg-[#080a1a] border border-white/5 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <p className="font-bold text-white flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  Profil Saya
+                </p>
+                <p className="text-xs text-slate-500 mt-1">15 Field Wajib</p>
+              </div>
+              <div className="flex items-center gap-4 w-full md:w-1/2">
+                <div className="flex-1 bg-white/5 h-2 rounded-full overflow-hidden">
+                  <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${profilPct}%` }}></div>
+                </div>
+                <span className={`text-xs font-bold shrink-0 ${profilPct === 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  Lengkap ({profilPct}%)
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-[#080a1a] border border-white/5 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <p className="font-bold text-white flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  Data Orang Tua
+                </p>
+                <p className="text-xs text-slate-500 mt-1">12 Field Wajib</p>
+              </div>
+              <div className="flex items-center gap-4 w-full md:w-1/2">
+                <div className="flex-1 bg-white/5 h-2 rounded-full overflow-hidden">
+                  <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${ortuPct}%` }}></div>
+                </div>
+                <span className={`text-xs font-bold shrink-0 ${ortuPct === 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  Lengkap ({ortuPct}%)
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-[#080a1a] border border-white/5 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <p className="font-bold text-white flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  Registrasi Peserta Didik
+                </p>
+                <p className="text-xs text-slate-500 mt-1">3 Field Wajib</p>
+              </div>
+              <div className="flex items-center gap-4 w-full md:w-1/2">
+                <div className="flex-1 bg-white/5 h-2 rounded-full overflow-hidden">
+                  <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${regPct}%` }}></div>
+                </div>
+                <span className={`text-xs font-bold shrink-0 ${regPct === 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  Lengkap ({regPct}%)
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-[#080a1a] border border-white/5 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <p className="font-bold text-white flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  Data Periodik
+                </p>
+                <p className="text-xs text-slate-500 mt-1">8 Field Wajib</p>
+              </div>
+              <div className="flex items-center gap-4 w-full md:w-1/2">
+                <div className="flex-1 bg-white/5 h-2 rounded-full overflow-hidden">
+                  <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${periodikPct}%` }}></div>
+                </div>
+                <span className={`text-xs font-bold shrink-0 ${periodikPct === 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  Lengkap ({periodikPct}%)
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const revenueData = [
     { name: 'Jan', current: 4000, subscribers: 2400, new: 2400 },
     { name: 'Feb', current: 3000, subscribers: 1398, new: 2210 },
@@ -1159,9 +1433,7 @@ function ProfilSiswaView({
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">JK</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Alamat</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">RT/RW</th>
-                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Kelurahan</th>
-                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Kecamatan</th>
-                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Kab/Kota</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Kel-Kec-Kab/Kota</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Kodepos</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Tinggal</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Transportasi</th>
@@ -1188,9 +1460,7 @@ function ProfilSiswaView({
                 <td className="p-5 text-sm text-slate-300">{s.jk || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.alamat_jalan || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.rt || "0"}/{s.rw || "0"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.kel || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.kec || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.kab_kota || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.nama_wil || s.wilayah || (s.kel || s.kec || s.kab_kota ? [s.kel, s.kec, s.kab_kota].filter(Boolean).join(', ') : "-")}</td>
                 <td className="p-5 text-sm text-slate-300">{s.kode_pos || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.jenis_tinggal || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.alat_transportasi || "-"}</td>
@@ -1724,16 +1994,18 @@ function OrangTuaView({
 
       <div className="bg-[#111633] border border-white/10 rounded-3xl overflow-hidden shadow-xl">
         <div className="max-h-[600px] overflow-x-auto overflow-y-auto custom-scrollbar">
-          <table className="w-full text-left border-collapse min-w-[2000px]">
+          <table className="w-full text-left border-collapse min-w-[2300px]">
             <thead className="sticky top-0 z-20 bg-[#161b40] shadow-[0_1px_0_rgba(255,255,255,0.05)]">
               <tr>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 sticky left-0 bg-[#161b40] z-30">NISN & Nama</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Status Hidup Ayah</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Nama Ayah</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">NIK Ayah</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Tahun Lahir Ayah</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Pendidikan Ayah</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Pekerjaan Ayah</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Penghasilan Ayah</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Status Hidup Ibu</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Nama Ibu</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">NIK Ibu</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Tahun Lahir Ibu</th>
@@ -1743,28 +2015,53 @@ function OrangTuaView({
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-            {students.map((s: any) => (
-              <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
-                <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
-                  <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
-                </td>
-                <td className="p-5 text-sm text-slate-300">{s.nama_ayah || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.nik_ayah || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.tahun_lahir_ayah || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.jenjang_pendidikan_ayah || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.pekerjaan_ayah || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.penghasilan_ayah || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.nama_ibu || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.nik_ibu || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.tahun_lahir_ibu || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.jenjang_pendidikan_ibu || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.pekerjaan_ibu || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.penghasilan_ibu || "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            {students.map((s: any) => {
+              const isAyahMeninggal = (s.status_hidup_ayah || "").toString().toLowerCase().includes("wafat") || 
+                                      (s.status_hidup_ayah || "").toString().toLowerCase().includes("meninggal") || 
+                                      (s.pekerjaan_ayah || "").toString().toLowerCase().includes("meninggal");
+              const isIbuMeninggal = (s.status_hidup_ibu || "").toString().toLowerCase().includes("wafat") || 
+                                     (s.status_hidup_ibu || "").toString().toLowerCase().includes("meninggal") || 
+                                     (s.pekerjaan_ibu || "").toString().toLowerCase().includes("meninggal");
+
+              const hasStatusAyah = s.status_hidup_ayah && s.status_hidup_ayah.toString().trim() !== "" && s.status_hidup_ayah.toString().trim() !== "-";
+              const hasStatusIbu = s.status_hidup_ibu && s.status_hidup_ibu.toString().trim() !== "" && s.status_hidup_ibu.toString().trim() !== "-";
+
+              const statusAyahDisplay = hasStatusAyah ? s.status_hidup_ayah : (isAyahMeninggal ? "Wafat" : "-");
+              const statusIbuDisplay = hasStatusIbu ? s.status_hidup_ibu : (isIbuMeninggal ? "Wafat" : "-");
+
+              return (
+                <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+                  <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
+                    <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
+                  </td>
+                  <td className="p-5 text-sm text-slate-300">
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold inline-block ${statusAyahDisplay === 'Wafat' ? 'bg-red-500/20 text-red-300 border border-red-500/30' : statusAyahDisplay === 'Hidup' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-slate-400'}`}>
+                      {statusAyahDisplay}
+                    </span>
+                  </td>
+                  <td className="p-5 text-sm text-slate-300">{s.nama_ayah || "-"}</td>
+                  <td className="p-5 text-sm text-slate-300">{s.nik_ayah || "-"}</td>
+                  <td className="p-5 text-sm text-slate-300">{s.tahun_lahir_ayah || "-"}</td>
+                  <td className="p-5 text-sm text-slate-300">{s.jenjang_pendidikan_ayah || "-"}</td>
+                  <td className="p-5 text-sm text-slate-300">{s.pekerjaan_ayah || (isAyahMeninggal ? "Sudah Meninggal" : "-")}</td>
+                  <td className="p-5 text-sm text-slate-300">{s.penghasilan_ayah || (isAyahMeninggal ? "Tidak Berpenghasilan" : "-")}</td>
+                  <td className="p-5 text-sm text-slate-300">
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold inline-block ${statusIbuDisplay === 'Wafat' ? 'bg-red-500/20 text-red-300 border border-red-500/30' : statusIbuDisplay === 'Hidup' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-slate-400'}`}>
+                      {statusIbuDisplay}
+                    </span>
+                  </td>
+                  <td className="p-5 text-sm text-slate-300">{s.nama_ibu || "-"}</td>
+                  <td className="p-5 text-sm text-slate-300">{s.nik_ibu || "-"}</td>
+                  <td className="p-5 text-sm text-slate-300">{s.tahun_lahir_ibu || "-"}</td>
+                  <td className="p-5 text-sm text-slate-300">{s.jenjang_pendidikan_ibu || "-"}</td>
+                  <td className="p-5 text-sm text-slate-300">{s.pekerjaan_ibu || (isIbuMeninggal ? "Sudah Meninggal" : "-")}</td>
+                  <td className="p-5 text-sm text-slate-300">{s.penghasilan_ibu || (isIbuMeninggal ? "Tidak Berpenghasilan" : "-")}</td>
+                </tr>
+              );
+            })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -1829,8 +2126,8 @@ function RegistrasiView({
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
                 </td>
                 <td className="p-5 text-sm text-slate-300">{s.sekolah_asal || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.id_hobby || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.id_cita || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.id_hobby || s.hobi || s.hobby || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{s.id_cita || s.id_cita_cita || s.cita_cita || s.cita || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.no_peserta_ujian || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.no_seri_ijazah || "-"}</td>
               </tr>
@@ -1973,21 +2270,22 @@ function RekapInputanView({
 }: any) {
   const isUser = user?.status === 'user';
   const [completionFilter, setCompletionFilter] = useState("Semua");
+  const [selectedDetail, setSelectedDetail] = useState<any>(null);
 
-  // Daftar field wajib per menu/kategori
+  // Daftar field wajib per menu/kategori (Hanya field bertanda bintang *)
   const REQUIRED_FIELDS = {
     profil: [
-      'nama', 'nisn', 'tempat_lahir', 'tanggal_lahir', 'nik', 'agama', 'no_kk', 
-      'reg_akta_lahir', 'jk', 'alamat_jalan', 'rt', 'rw', 
-      'kel', 'kec', 'kab_kota', 'kode_pos', 'jenis_tinggal', 
-      'alat_transportasi', 'no_hp', 'email'
+      'nama', 'jk', 'nipd', 'nisn', 'nik', 'agama',
+      'tempat_lahir', 'tanggal_lahir', 'no_kk',
+      'alamat_jalan', 'wilayah',
+      'jenis_tinggal', 'alat_transportasi', 'no_hp', 'jurusan'
     ],
     ortu: [
       'nama_ayah', 'nik_ayah', 'tahun_lahir_ayah', 'jenjang_pendidikan_ayah', 'pekerjaan_ayah', 'penghasilan_ayah',
       'nama_ibu', 'nik_ibu', 'tahun_lahir_ibu', 'jenjang_pendidikan_ibu', 'pekerjaan_ibu', 'penghasilan_ibu'
     ],
     registrasi: [
-      'sekolah_asal', 'id_hobby', 'id_cita', 'no_peserta_ujian', 'no_seri_ijazah'
+      'sekolah_asal', 'id_hobby', 'id_cita'
     ],
     periodik: [
       'tinggi_badan', 'berat_badan', 'lingkar_kepala', 'jumlah_saudara_kandung', 
@@ -1995,14 +2293,235 @@ function RekapInputanView({
     ]
   };
 
+  const isValValid = (val: any) => {
+    if (val === undefined || val === null) return false;
+    const str = val.toString().trim();
+    return str !== "" && str !== "-";
+  };
+
+  const isParentMeninggal = (statusVal: any, kerjaVal: any) => {
+    const s = statusVal ? statusVal.toString().trim().toLowerCase() : "";
+    const k = kerjaVal ? kerjaVal.toString().trim().toLowerCase() : "";
+    return s.includes("wafat") || s.includes("meninggal") || k.includes("meninggal") || k.includes("wafat");
+  };
+
+  const getMissingFields = (st: any, category: 'profil' | 'ortu' | 'registrasi' | 'periodik'): string[] => {
+    if (!st) return [];
+    const missing: string[] = [];
+
+    if (category === 'profil') {
+      const PROFIL_MAP: Record<string, string> = {
+        nama: 'Nama Lengkap',
+        jk: 'Jenis Kelamin',
+        nipd: 'NIPD',
+        nisn: 'NISN',
+        nik: 'NIK',
+        agama: 'Agama',
+        tempat_lahir: 'Tempat Lahir',
+        tanggal_lahir: 'Tanggal Lahir',
+        no_kk: 'No. KK',
+        alamat_jalan: 'Alamat Jalan',
+        wilayah: 'Wilayah / Kecamatan',
+        jenis_tinggal: 'Jenis Tempat Tinggal',
+        alat_transportasi: 'Alat Transportasi',
+        no_hp: 'No. HP / Kontak',
+        jurusan: 'Jurusan / Rombel'
+      };
+
+      REQUIRED_FIELDS.profil.forEach(f => {
+        let valid = isValValid(st[f]);
+        if (f === 'wilayah') {
+          valid = isValValid(st.nama_wil) || isValValid(st.wilayah) || isValValid(st.kel) || isValValid(st.kec) || isValValid(st.kab_kota);
+        } else if (f === 'nipd') {
+          valid = isValValid(st.nipd) || isValValid(st.nipd_nisn) || isValValid(st.login) || isValValid(st.nisn);
+        } else if (f === 'jurusan') {
+          valid = isValValid(st.jurusan) || isValValid(st.rombel);
+        } else if (f === 'no_hp') {
+          valid = isValValid(st.no_hp) || isValValid(st.nomor_telepon);
+        }
+        if (!valid) {
+          missing.push(PROFIL_MAP[f] || f);
+        }
+      });
+    } else if (category === 'ortu') {
+      // Ayah
+      const ayahWafat = isParentMeninggal(st.status_hidup_ayah, st.pekerjaan_ayah);
+      if (ayahWafat) {
+        if (!isValValid(st.nama_ayah)) missing.push('Nama Ayah');
+        if (!isValValid(st.status_hidup_ayah) && !isParentMeninggal(st.status_hidup_ayah, st.pekerjaan_ayah)) {
+          missing.push('Status Hidup Ayah');
+        }
+      } else {
+        if (!isValValid(st.status_hidup_ayah)) missing.push('Status Hidup Ayah');
+        if (!isValValid(st.nama_ayah)) missing.push('Nama Ayah');
+        if (!isValValid(st.nik_ayah)) missing.push('NIK Ayah');
+        if (!isValValid(st.tahun_lahir_ayah)) missing.push('Tahun Lahir Ayah');
+        if (!isValValid(st.jenjang_pendidikan_ayah)) missing.push('Pendidikan Ayah');
+        if (!isValValid(st.pekerjaan_ayah)) missing.push('Pekerjaan Ayah');
+        if (!isValValid(st.penghasilan_ayah)) missing.push('Penghasilan Ayah');
+      }
+
+      // Ibu
+      const ibuWafat = isParentMeninggal(st.status_hidup_ibu, st.pekerjaan_ibu);
+      if (ibuWafat) {
+        if (!isValValid(st.nama_ibu)) missing.push('Nama Ibu');
+        if (!isValValid(st.status_hidup_ibu) && !isParentMeninggal(st.status_hidup_ibu, st.pekerjaan_ibu)) {
+          missing.push('Status Hidup Ibu');
+        }
+      } else {
+        if (!isValValid(st.status_hidup_ibu)) missing.push('Status Hidup Ibu');
+        if (!isValValid(st.nama_ibu)) missing.push('Nama Ibu');
+        if (!isValValid(st.nik_ibu)) missing.push('NIK Ibu');
+        if (!isValValid(st.tahun_lahir_ibu)) missing.push('Tahun Lahir Ibu');
+        if (!isValValid(st.jenjang_pendidikan_ibu)) missing.push('Pendidikan Ibu');
+        if (!isValValid(st.pekerjaan_ibu)) missing.push('Pekerjaan Ibu');
+        if (!isValValid(st.penghasilan_ibu)) missing.push('Penghasilan Ibu');
+      }
+    } else if (category === 'registrasi') {
+      if (!isValValid(st.sekolah_asal)) missing.push('Sekolah Asal');
+      if (!isValValid(st.id_hobby) && !isValValid(st.hobi) && !isValValid(st.hobby)) missing.push('Hobi');
+      if (!isValValid(st.id_cita) && !isValValid(st.id_cita_cita) && !isValValid(st.cita_cita) && !isValValid(st.cita)) missing.push('Cita-cita');
+    } else if (category === 'periodik') {
+      if (!isValValid(st.tinggi_badan) && !isValValid(st.tinggi)) missing.push('Tinggi Badan (cm)');
+      if (!isValValid(st.berat_badan) && !isValValid(st.berat)) missing.push('Berat Badan (kg)');
+      if (!isValValid(st.lingkar_kepala) && !isValValid(st.lingkar)) missing.push('Lingkar Kepala (cm)');
+      if (!isValValid(st.jumlah_saudara_kandung) && !isValValid(st.saudara)) missing.push('Jumlah Saudara Kandung');
+      if (!isValValid(st.anak_ke) && !isValValid(st.anak_ke_berapa)) missing.push('Anak Ke-');
+
+      const jarakVal = (st.jarak_rumah_ke_sekolah || st.jarak_tempat_tinggal_ke_sekolah || st.jarak || "").toString().trim();
+      if (!isValValid(jarakVal)) missing.push('Jarak Tempat Tinggal ke Sekolah');
+
+      if (!isValValid(st.waktu_tempuh_ke_sekolah_menit) && !isValValid(st.waktu_tempuh)) missing.push('Waktu Tempuh ke Sekolah (Menit)');
+
+      const jarakLower = jarakVal.toLowerCase();
+      const isLebihDari1Km = jarakLower.includes("lebih") || jarakLower.includes(">") || jarakLower.includes("lebih dari 1");
+      if (isLebihDari1Km) {
+        if (!isValValid(st.sebutkan_berapa_kilometer) && !isValValid(st.sebutkan_berapa_km) && !isValValid(st.jarak_km)) {
+          missing.push('Sebutkan (Berapa Kilometer)');
+        }
+      }
+    }
+
+    return missing;
+  };
+
+  const getOrtuCompletion = (st: any) => {
+    if (!st) return 0;
+
+    // Ayah
+    const ayahWafat = isParentMeninggal(st.status_hidup_ayah, st.pekerjaan_ayah);
+    let ayahTotal = 0;
+    let ayahValid = 0;
+
+      if (ayahWafat) {
+        ayahTotal = 2;
+        if (isValValid(st.nama_ayah)) ayahValid++;
+        if (isValValid(st.status_hidup_ayah) || isParentMeninggal(st.status_hidup_ayah, st.pekerjaan_ayah)) ayahValid++;
+      } else {
+        ayahTotal = 7;
+        if (isValValid(st.status_hidup_ayah)) ayahValid++;
+        if (isValValid(st.nama_ayah)) ayahValid++;
+        if (isValValid(st.nik_ayah)) ayahValid++;
+        if (isValValid(st.tahun_lahir_ayah)) ayahValid++;
+        if (isValValid(st.jenjang_pendidikan_ayah)) ayahValid++;
+        if (isValValid(st.pekerjaan_ayah)) ayahValid++;
+        if (isValValid(st.penghasilan_ayah)) ayahValid++;
+      }
+
+      // Ibu
+      const ibuWafat = isParentMeninggal(st.status_hidup_ibu, st.pekerjaan_ibu);
+      let ibuTotal = 0;
+      let ibuValid = 0;
+
+      if (ibuWafat) {
+        ibuTotal = 2;
+        if (isValValid(st.nama_ibu)) ibuValid++;
+        if (isValValid(st.status_hidup_ibu) || isParentMeninggal(st.status_hidup_ibu, st.pekerjaan_ibu)) ibuValid++;
+      } else {
+        ibuTotal = 7;
+        if (isValValid(st.status_hidup_ibu)) ibuValid++;
+        if (isValValid(st.nama_ibu)) ibuValid++;
+        if (isValValid(st.nik_ibu)) ibuValid++;
+        if (isValValid(st.tahun_lahir_ibu)) ibuValid++;
+        if (isValValid(st.jenjang_pendidikan_ibu)) ibuValid++;
+        if (isValValid(st.pekerjaan_ibu)) ibuValid++;
+        if (isValValid(st.penghasilan_ibu)) ibuValid++;
+      }
+
+    const totalReq = ayahTotal + ibuTotal;
+    const totalVal = ayahValid + ibuValid;
+    return totalReq > 0 ? Math.round((totalVal / totalReq) * 100) : 0;
+  };
+
+  const getPeriodikCompletion = (st: any) => {
+    if (!st) return 0;
+    let validCount = 0;
+
+    // 1. Tinggi Badan (cm)
+    if (isValValid(st.tinggi_badan) || isValValid(st.tinggi)) validCount++;
+    // 2. Berat Badan (kg)
+    if (isValValid(st.berat_badan) || isValValid(st.berat)) validCount++;
+    // 3. Lingkar Kepala (cm)
+    if (isValValid(st.lingkar_kepala) || isValValid(st.lingkar)) validCount++;
+    // 4. Jumlah Saudara Kandung
+    if (isValValid(st.jumlah_saudara_kandung) || isValValid(st.saudara)) validCount++;
+    // 5. Anak Ke-
+    if (isValValid(st.anak_ke) || isValValid(st.anak_ke_berapa)) validCount++;
+    // 6. Jarak Tempat Tinggal ke Sekolah
+    const jarakVal = (st.jarak_rumah_ke_sekolah || st.jarak_tempat_tinggal_ke_sekolah || st.jarak || "").toString().trim();
+    if (isValValid(jarakVal)) validCount++;
+    // 7. Waktu Tempuh ke Sekolah (Menit)
+    if (isValValid(st.waktu_tempuh_ke_sekolah_menit) || isValValid(st.waktu_tempuh)) validCount++;
+
+    // Logika Kondisional untuk Jarak
+    const jarakLower = jarakVal.toLowerCase();
+    const isLebihDari1Km = jarakLower.includes("lebih") || jarakLower.includes(">") || jarakLower.includes("lebih dari 1");
+
+    let totalFields = 7;
+    if (isLebihDari1Km) {
+      totalFields = 8;
+      if (isValValid(st.sebutkan_berapa_kilometer) || isValValid(st.sebutkan_berapa_km) || isValValid(st.jarak_km)) {
+        validCount++;
+      }
+    }
+
+    return Math.round((validCount / totalFields) * 100);
+  };
+
   const getCompletion = (student: any, fields: string[]): number => {
     if (!student || !fields || fields.length === 0) return 0;
     let count = 0;
     fields.forEach(f => {
-      const val = student[f];
-      if (val !== undefined && val !== null) {
-        const str = val.toString().trim();
-        if (str !== "" && str !== "-") {
+      if (f === 'wilayah') {
+        if (isValValid(student.nama_wil) || isValValid(student.wilayah) || isValValid(student.kel) || isValValid(student.kec) || isValValid(student.kab_kota)) {
+          count++;
+        }
+      } else if (f === 'nipd') {
+        if (isValValid(student.nipd) || isValValid(student.nipd_nisn) || isValValid(student.login) || isValValid(student.nisn)) {
+          count++;
+        }
+      } else if (f === 'jurusan') {
+        if (isValValid(student.jurusan) || isValValid(student.rombel)) {
+          count++;
+        }
+      } else if (f === 'sebutkan_berapa_kilometer') {
+        if (isValValid(student.sebutkan_berapa_kilometer) || isValValid(student.jarak_rumah_ke_sekolah)) {
+          count++;
+        }
+      } else if (f === 'waktu_tempuh_ke_sekolah_menit') {
+        if (isValValid(student.waktu_tempuh_ke_sekolah_menit) || isValValid(student.waktu_tempuh)) {
+          count++;
+        }
+      } else if (f === 'id_hobby') {
+        if (isValValid(student.id_hobby) || isValValid(student.hobi) || isValValid(student.hobby)) {
+          count++;
+        }
+      } else if (f === 'id_cita') {
+        if (isValValid(student.id_cita) || isValValid(student.id_cita_cita) || isValValid(student.cita_cita) || isValValid(student.cita)) {
+          count++;
+        }
+      } else {
+        if (isValValid(student[f])) {
           count++;
         }
       }
@@ -2013,9 +2532,9 @@ function RekapInputanView({
   const studentStats = useMemo(() => {
     return students.map((s: any) => {
       const profilPct = getCompletion(s, REQUIRED_FIELDS.profil);
-      const ortuPct = getCompletion(s, REQUIRED_FIELDS.ortu);
+      const ortuPct = getOrtuCompletion(s);
       const regPct = getCompletion(s, REQUIRED_FIELDS.registrasi);
-      const periodikPct = getCompletion(s, REQUIRED_FIELDS.periodik);
+      const periodikPct = getPeriodikCompletion(s);
       const overallPct = Math.round((profilPct + ortuPct + regPct + periodikPct) / 4);
 
       return {
@@ -2057,7 +2576,7 @@ function RekapInputanView({
     };
   }, [studentStats]);
 
-  const renderBadge = (pct: number) => {
+  const renderBadge = (pct: number, student: any, categoryKey: 'profil' | 'ortu' | 'registrasi' | 'periodik', categoryLabel: string) => {
     let colorStyle = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
     let barStyle = "bg-emerald-500";
     
@@ -2069,14 +2588,28 @@ function RekapInputanView({
       barStyle = "bg-amber-500";
     }
 
+    const missing = pct < 100 ? getMissingFields(student, categoryKey) : [];
+
     return (
-      <div className="flex flex-col gap-1.5 min-w-[100px]">
+      <div 
+        className={`group/badge relative flex flex-col gap-1.5 min-w-[100px] ${pct < 100 ? 'cursor-pointer' : ''}`}
+        onClick={() => {
+          if (pct < 100) {
+            setSelectedDetail({ student, categoryKey, categoryLabel, pct, missing });
+          }
+        }}
+        title={pct < 100 ? `Klik untuk melihat ${missing.length} data belum terisi` : 'Lengkap 100%'}
+      >
         <div className="flex items-center justify-between">
-          <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${colorStyle}`}>
+          <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold border transition-all ${colorStyle} ${pct < 100 ? 'group-hover/badge:scale-105 group-hover/badge:border-amber-400/80 shadow-sm' : ''}`}>
             {pct}%
           </span>
-          {pct === 100 && (
+          {pct === 100 ? (
             <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest hidden sm:inline">Lengkap</span>
+          ) : (
+            <span className="text-[10px] text-amber-400/90 font-bold uppercase tracking-widest hidden sm:inline group-hover/badge:underline">
+              {missing.length} Kosong
+            </span>
           )}
         </div>
         <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
@@ -2085,6 +2618,69 @@ function RekapInputanView({
             style={{ width: `${pct}%` }}
           />
         </div>
+
+        {/* Hover Tooltip Preview */}
+        {pct < 100 && missing.length > 0 && (
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/badge:flex flex-col bg-[#181e42] border border-amber-500/40 rounded-xl p-3 shadow-2xl z-50 min-w-[210px] max-w-[280px] text-left pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-1.5 mb-1.5">
+              <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
+                <AlertCircle size={12} className="text-amber-400 shrink-0" /> {categoryLabel} ({pct}%)
+              </span>
+              <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-mono font-bold">
+                {missing.length} Belum Terisi
+              </span>
+            </div>
+            <ul className="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar text-[11px] text-slate-200">
+              {missing.map((item, idx) => (
+                <li key={idx} className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                  <span className="truncate">{item}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[9px] text-purple-300 font-semibold mt-2 text-center border-t border-white/5 pt-1">
+              Klik untuk melihat rincian lengkap
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderOverallBadge = (s: any) => {
+    const isLengkap = s.overallPct === 100;
+    const allMissing = isLengkap ? [] : [
+      ...getMissingFields(s, 'profil').map(f => `[Profil] ${f}`),
+      ...getMissingFields(s, 'ortu').map(f => `[Data Org Tua] ${f}`),
+      ...getMissingFields(s, 'registrasi').map(f => `[Registrasi] ${f}`),
+      ...getMissingFields(s, 'periodik').map(f => `[Data Periodik] ${f}`),
+    ];
+
+    return (
+      <div 
+        className={`inline-block relative group/overall ${!isLengkap ? 'cursor-pointer' : ''}`}
+        onClick={() => {
+          if (!isLengkap) {
+            setSelectedDetail({
+              student: s,
+              categoryKey: 'overall',
+              categoryLabel: 'Semua Kategori (Rata-Rata Total)',
+              pct: s.overallPct,
+              missing: allMissing
+            });
+          }
+        }}
+        title={!isLengkap ? `Klik untuk melihat total ${allMissing.length} field belum terisi` : '100% Lengkap'}
+      >
+        <span className={`inline-block px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+          isLengkap 
+            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+            : s.overallPct >= 70
+            ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:border-blue-400'
+            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:border-amber-400'
+        }`}>
+          {s.overallPct}%
+        </span>
       </div>
     );
   };
@@ -2095,7 +2691,7 @@ function RekapInputanView({
       <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white tracking-tight">Rekap Inputan Data Siswa</h2>
-          <p className="text-slate-400 text-xs mt-1">Persentase kelengkapan pengisian data wajib siswa per kategori</p>
+          <p className="text-slate-400 text-xs mt-1">Persentase kelengkapan pengisian data wajib siswa per kategori. Klik/sorot pada % untuk melihat data yang belum terisi.</p>
         </div>
         <div className="flex flex-wrap gap-2 md:gap-3">
           <select 
@@ -2194,20 +2790,12 @@ function RekapInputanView({
                       <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
                     </td>
                     <td className="p-5 text-sm text-slate-300 font-medium">{s.rombel || "-"}</td>
-                    <td className="p-5">{renderBadge(s.profilPct)}</td>
-                    <td className="p-5">{renderBadge(s.ortuPct)}</td>
-                    <td className="p-5">{renderBadge(s.regPct)}</td>
-                    <td className="p-5">{renderBadge(s.periodikPct)}</td>
+                    <td className="p-5">{renderBadge(s.profilPct, s, 'profil', 'Profil Siswa')}</td>
+                    <td className="p-5">{renderBadge(s.ortuPct, s, 'ortu', 'Data Org Tua')}</td>
+                    <td className="p-5">{renderBadge(s.regPct, s, 'registrasi', 'Registrasi')}</td>
+                    <td className="p-5">{renderBadge(s.periodikPct, s, 'periodik', 'Data Periodik')}</td>
                     <td className="p-5 text-center">
-                      <span className={`inline-block px-3 py-1 rounded-xl text-xs font-bold ${
-                        s.overallPct === 100 
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
-                          : s.overallPct >= 70
-                          ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                          : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                      }`}>
-                        {s.overallPct}%
-                      </span>
+                      {renderOverallBadge(s)}
                     </td>
                   </tr>
                 ))
@@ -2216,6 +2804,64 @@ function RekapInputanView({
           </table>
         </div>
       </div>
+
+      {/* Modal Detail Field Belum Terisi */}
+      {selectedDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#111633] border border-white/10 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-start justify-between border-b border-white/10 pb-4">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full inline-block mb-2">
+                  Belum Lengkap ({selectedDetail.pct}%)
+                </span>
+                <h3 className="text-lg font-bold text-white leading-tight">{selectedDetail.student?.nama}</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  NISN: <span className="text-slate-200 font-mono">{selectedDetail.student?.nisn}</span> | Rombel: <span className="text-slate-200">{selectedDetail.student?.rombel || '-'}</span>
+                </p>
+              </div>
+              <button 
+                onClick={() => setSelectedDetail(null)}
+                className="p-2 text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-all"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                  <AlertCircle size={16} className="text-amber-400" />
+                  Kategori: <span className="text-purple-300 font-bold">{selectedDetail.categoryLabel}</span>
+                </h4>
+                <span className="text-xs font-medium text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                  {selectedDetail.missing.length} Field Kosong
+                </span>
+              </div>
+
+              <div className="bg-[#181e42] border border-white/5 rounded-2xl p-4 max-h-[260px] overflow-y-auto custom-scrollbar">
+                <p className="text-xs font-semibold text-slate-400 mb-2.5">Daftar Field Yang Belum Diisi:</p>
+                <ul className="space-y-2">
+                  {selectedDetail.missing.map((field: string, idx: number) => (
+                    <li key={idx} className="flex items-center gap-2.5 text-xs text-slate-200 bg-white/[0.03] border border-white/5 p-2.5 rounded-xl">
+                      <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                      <span className="font-medium">{field}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setSelectedDetail(null)}
+                className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-sm rounded-xl transition-all shadow-lg"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
