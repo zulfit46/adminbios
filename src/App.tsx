@@ -64,7 +64,7 @@ export default function App() {
           if (allowed.length > 0) {
             // Set sub-tab aktif ke menu pertama yang diizinkan
             const firstMenu = allowed[0];
-            const validMenus = ['profil', 'ortu', 'registrasi', 'periodik', 'kurang_mampu', 'verval'];
+            const validMenus = ['rekap', 'profil', 'ortu', 'registrasi', 'periodik', 'kurang_mampu', 'verval'];
             if (validMenus.includes(firstMenu)) {
               setActiveSubTab(firstMenu);
             }
@@ -389,7 +389,8 @@ export default function App() {
     const mLower = menu.toLowerCase();
     return allowed.includes(mLower) ||
            (mLower === 'ortu' && allowed.includes('orangtua')) ||
-           (mLower === 'orangtua' && allowed.includes('ortu'));
+           (mLower === 'orangtua' && allowed.includes('ortu')) ||
+           (mLower === 'rekap' && (allowed.includes('rekap_inputan') || allowed.includes('rekap')));
   };
 
   if (!user) {
@@ -460,6 +461,7 @@ export default function App() {
             
             {activeTab === 'data' && (
               <div className="ml-6 pl-4 border-l border-white/10 space-y-1 mt-1 mb-2">
+                {isAllowed('rekap') && <SubNavItem active={activeSubTab === 'rekap'} onClick={() => setActiveSubTab('rekap')} label="Rekap Inputan" />}
                 {isAllowed('profil') && <SubNavItem active={activeSubTab === 'profil'} onClick={() => setActiveSubTab('profil')} label="Profil Siswa" />}
                 {isAllowed('ortu') && <SubNavItem active={activeSubTab === 'ortu'} onClick={() => setActiveSubTab('ortu')} label="Data Orang Tua" />}
                 {isAllowed('registrasi') && <SubNavItem active={activeSubTab === 'registrasi'} onClick={() => setActiveSubTab('registrasi')} label="Registrasi" />}
@@ -615,6 +617,18 @@ export default function App() {
                       user={user}
                     />
                   )}
+                  {activeSubTab === 'rekap' && (
+                    <RekapInputanView 
+                      students={filteredStudents} 
+                      search={search} 
+                      setSearch={setSearch} 
+                      rombelFilter={rombelFilter}
+                      setRombelFilter={setRombelFilter}
+                      uniqueRombels={uniqueRombels}
+                      onRefresh={fetchData}
+                      user={user}
+                    />
+                  )}
                   {activeSubTab === 'kurang_mampu' && (
                     <KurangMampuView 
                       data={filteredKurangMampu} 
@@ -627,7 +641,7 @@ export default function App() {
                       user={user}
                     />
                   )}
-                  {!['verval', 'profil', 'ortu', 'registrasi', 'periodik', 'kurang_mampu'].includes(activeSubTab) && (
+                  {!['verval', 'profil', 'ortu', 'registrasi', 'periodik', 'rekap', 'kurang_mampu'].includes(activeSubTab) && (
                     <div className="h-full flex flex-col items-center justify-center text-slate-500 py-20">
                       <Clock size={48} className="mb-4 opacity-20" />
                       <p className="text-lg font-medium">Menu Sedang Dikembangkan</p>
@@ -1293,7 +1307,7 @@ function KurangMampuView({
 
 function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading, students }: any) {
   const menuOptions = [
-    'dashboard', 'profil', 'ortu', 'registrasi', 'periodik', 
+    'dashboard', 'rekap', 'profil', 'ortu', 'registrasi', 'periodik',
     'kurang_mampu', 'notifikasi', 'verval', 'cetak'
   ];
 
@@ -1947,6 +1961,261 @@ function StatCard({ icon, label, value, trend, isUp }: any) {
       </div>
       
       <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-blue-600/5 rounded-full blur-2xl group-hover:bg-blue-600/10 transition-all"></div>
+    </div>
+  );
+}
+
+function RekapInputanView({ 
+  students, search, setSearch, 
+  rombelFilter, setRombelFilter, 
+  uniqueRombels,
+  onRefresh, user 
+}: any) {
+  const isUser = user?.status === 'user';
+  const [completionFilter, setCompletionFilter] = useState("Semua");
+
+  // Daftar field wajib per menu/kategori
+  const REQUIRED_FIELDS = {
+    profil: [
+      'nama', 'nisn', 'tempat_lahir', 'tanggal_lahir', 'nik', 'agama', 'no_kk', 
+      'reg_akta_lahir', 'jk', 'alamat_jalan', 'rt', 'rw', 
+      'kel', 'kec', 'kab_kota', 'kode_pos', 'jenis_tinggal', 
+      'alat_transportasi', 'no_hp', 'email'
+    ],
+    ortu: [
+      'nama_ayah', 'nik_ayah', 'tahun_lahir_ayah', 'jenjang_pendidikan_ayah', 'pekerjaan_ayah', 'penghasilan_ayah',
+      'nama_ibu', 'nik_ibu', 'tahun_lahir_ibu', 'jenjang_pendidikan_ibu', 'pekerjaan_ibu', 'penghasilan_ibu'
+    ],
+    registrasi: [
+      'sekolah_asal', 'id_hobby', 'id_cita', 'no_peserta_ujian', 'no_seri_ijazah'
+    ],
+    periodik: [
+      'tinggi_badan', 'berat_badan', 'lingkar_kepala', 'jumlah_saudara_kandung', 
+      'anak_ke', 'jarak_rumah_ke_sekolah', 'sebutkan_berapa_kilometer', 'waktu_tempuh_ke_sekolah_menit'
+    ]
+  };
+
+  const getCompletion = (student: any, fields: string[]): number => {
+    if (!student || !fields || fields.length === 0) return 0;
+    let count = 0;
+    fields.forEach(f => {
+      const val = student[f];
+      if (val !== undefined && val !== null) {
+        const str = val.toString().trim();
+        if (str !== "" && str !== "-") {
+          count++;
+        }
+      }
+    });
+    return Math.round((count / fields.length) * 100);
+  };
+
+  const studentStats = useMemo(() => {
+    return students.map((s: any) => {
+      const profilPct = getCompletion(s, REQUIRED_FIELDS.profil);
+      const ortuPct = getCompletion(s, REQUIRED_FIELDS.ortu);
+      const regPct = getCompletion(s, REQUIRED_FIELDS.registrasi);
+      const periodikPct = getCompletion(s, REQUIRED_FIELDS.periodik);
+      const overallPct = Math.round((profilPct + ortuPct + regPct + periodikPct) / 4);
+
+      return {
+        ...s,
+        profilPct,
+        ortuPct,
+        regPct,
+        periodikPct,
+        overallPct
+      };
+    });
+  }, [students]);
+
+  const filteredStats = useMemo(() => {
+    if (completionFilter === "Lengkap") {
+      return studentStats.filter((s: any) => s.overallPct === 100);
+    }
+    if (completionFilter === "Belum Lengkap") {
+      return studentStats.filter((s: any) => s.overallPct < 100);
+    }
+    return studentStats;
+  }, [studentStats, completionFilter]);
+
+  // Rata-rata kelas / total
+  const avgStats = useMemo(() => {
+    if (studentStats.length === 0) return { profil: 0, ortu: 0, reg: 0, periodik: 0, overall: 0 };
+    const sumProfil = studentStats.reduce((acc: number, s: any) => acc + s.profilPct, 0);
+    const sumOrtu = studentStats.reduce((acc: number, s: any) => acc + s.ortuPct, 0);
+    const sumReg = studentStats.reduce((acc: number, s: any) => acc + s.regPct, 0);
+    const sumPeriodik = studentStats.reduce((acc: number, s: any) => acc + s.periodikPct, 0);
+    const count = studentStats.length;
+
+    return {
+      profil: Math.round(sumProfil / count),
+      ortu: Math.round(sumOrtu / count),
+      reg: Math.round(sumReg / count),
+      periodik: Math.round(sumPeriodik / count),
+      overall: Math.round((sumProfil + sumOrtu + sumReg + sumPeriodik) / (count * 4))
+    };
+  }, [studentStats]);
+
+  const renderBadge = (pct: number) => {
+    let colorStyle = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+    let barStyle = "bg-emerald-500";
+    
+    if (pct < 50) {
+      colorStyle = "bg-red-500/10 text-red-400 border-red-500/30";
+      barStyle = "bg-red-500";
+    } else if (pct < 100) {
+      colorStyle = "bg-amber-500/10 text-amber-400 border-amber-500/30";
+      barStyle = "bg-amber-500";
+    }
+
+    return (
+      <div className="flex flex-col gap-1.5 min-w-[100px]">
+        <div className="flex items-center justify-between">
+          <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${colorStyle}`}>
+            {pct}%
+          </span>
+          {pct === 100 && (
+            <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest hidden sm:inline">Lengkap</span>
+          )}
+        </div>
+        <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+          <div 
+            className={`h-full rounded-full transition-all duration-500 ${barStyle}`} 
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6 pb-10 animate-in slide-in-from-bottom-4 duration-500">
+      {/* Header & Filter Controls */}
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white tracking-tight">Rekap Inputan Data Siswa</h2>
+          <p className="text-slate-400 text-xs mt-1">Persentase kelengkapan pengisian data wajib siswa per kategori</p>
+        </div>
+        <div className="flex flex-wrap gap-2 md:gap-3">
+          <select 
+            value={completionFilter}
+            onChange={(e) => setCompletionFilter(e.target.value)}
+            className="bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200"
+          >
+            <option value="Semua">Status: Semua</option>
+            <option value="Lengkap">100% Lengkap</option>
+            <option value="Belum Lengkap">Belum Lengkap (&lt;100%)</option>
+          </select>
+
+          <select 
+            value={rombelFilter}
+            onChange={(e) => setRombelFilter(e.target.value)}
+            disabled={isUser}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {uniqueRombels.map((r: string) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+
+          <div className="relative w-full md:w-72">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <input 
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari Nama atau NISN..."
+              className="bg-[#111633] border border-white/10 rounded-xl py-2.5 pl-12 pr-4 w-full focus:outline-none focus:border-purple-500/50 text-slate-200"
+            />
+          </div>
+          <button onClick={onRefresh} className="p-2.5 bg-[#111633] hover:bg-white/5 border border-white/10 rounded-xl transition-all text-slate-400 hover:text-white">
+            <RefreshCw size={20} />
+          </button>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="bg-[#111633] border border-white/10 p-5 rounded-2xl">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Siswa</p>
+          <h4 className="text-2xl font-bold text-white">{filteredStats.length}</h4>
+          <p className="text-[10px] text-slate-400 mt-1">Siswa Terdaftar</p>
+        </div>
+        <div className="bg-[#111633] border border-white/10 p-5 rounded-2xl">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Profil Siswa</p>
+          <h4 className="text-2xl font-bold text-blue-400">{avgStats.profil}%</h4>
+          <p className="text-[10px] text-slate-400 mt-1">Rata-rata Kelengkapan</p>
+        </div>
+        <div className="bg-[#111633] border border-white/10 p-5 rounded-2xl">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Data Org Tua</p>
+          <h4 className="text-2xl font-bold text-purple-400">{avgStats.ortu}%</h4>
+          <p className="text-[10px] text-slate-400 mt-1">Rata-rata Kelengkapan</p>
+        </div>
+        <div className="bg-[#111633] border border-white/10 p-5 rounded-2xl">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Registrasi</p>
+          <h4 className="text-2xl font-bold text-indigo-400">{avgStats.reg}%</h4>
+          <p className="text-[10px] text-slate-400 mt-1">Rata-rata Kelengkapan</p>
+        </div>
+        <div className="bg-[#111633] border border-white/10 p-5 rounded-2xl col-span-2 sm:col-span-1">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Data Periodik</p>
+          <h4 className="text-2xl font-bold text-cyan-400">{avgStats.periodik}%</h4>
+          <p className="text-[10px] text-slate-400 mt-1">Rata-rata Kelengkapan</p>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-[#111633] border border-white/10 rounded-3xl overflow-hidden shadow-xl">
+        <div className="max-h-[600px] overflow-x-auto overflow-y-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse min-w-[950px]">
+            <thead className="sticky top-0 z-20 bg-[#161b40] shadow-[0_1px_0_rgba(255,255,255,0.05)]">
+              <tr>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 w-12">No</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 sticky left-0 bg-[#161b40] z-30 min-w-[220px]">Nama & NISN</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Rombel</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Profil</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Data Org Tua</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Registrasi</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Data Periodik</th>
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 text-center">Rata-Rata Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {filteredStats.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-10 text-center text-slate-500 italic">
+                    Tidak ada data siswa ditemukan.
+                  </td>
+                </tr>
+              ) : (
+                filteredStats.map((s: any, idx: number) => (
+                  <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+                    <td className="p-5 text-sm font-bold text-slate-500">{idx + 1}</td>
+                    <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
+                      <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
+                    </td>
+                    <td className="p-5 text-sm text-slate-300 font-medium">{s.rombel || "-"}</td>
+                    <td className="p-5">{renderBadge(s.profilPct)}</td>
+                    <td className="p-5">{renderBadge(s.ortuPct)}</td>
+                    <td className="p-5">{renderBadge(s.regPct)}</td>
+                    <td className="p-5">{renderBadge(s.periodikPct)}</td>
+                    <td className="p-5 text-center">
+                      <span className={`inline-block px-3 py-1 rounded-xl text-xs font-bold ${
+                        s.overallPct === 100 
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+                          : s.overallPct >= 70
+                          ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                          : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                      }`}>
+                        {s.overallPct}%
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
