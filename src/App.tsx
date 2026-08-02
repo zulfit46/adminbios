@@ -62,7 +62,11 @@ export default function App() {
         // Langsung tampilkan menu Data Siswa dan sub-menu Rekap Inputan
         setActiveTab('data');
         if (result.user.status === 'user' && result.user.akses_menu) {
-          const allowed = result.user.akses_menu.split(',').map((m: string) => m.trim().toLowerCase());
+          let rawAkses = result.user.akses_menu.toString();
+          if (rawAkses.includes(':')) {
+            rawAkses = rawAkses.split(':')[1].trim();
+          }
+          const allowed = rawAkses.split(',').map((m: string) => m.trim().toLowerCase());
           const hasRekap = allowed.includes('rekap') || allowed.includes('rekap_inputan');
           if (hasRekap || allowed.length === 0) {
             setActiveSubTab('rekap');
@@ -389,7 +393,11 @@ export default function App() {
   const isAllowed = (menu: string) => {
     if (user?.status === 'admin') return true;
     if (!user?.akses_menu) return true;
-    const allowed = user.akses_menu.split(',').map((m: any) => m.trim().toLowerCase());
+    let rawAkses = user.akses_menu.toString();
+    if (rawAkses.includes(':')) {
+      rawAkses = rawAkses.split(':')[1].trim();
+    }
+    const allowed = rawAkses.split(',').map((m: any) => m.trim().toLowerCase());
     const mLower = menu.toLowerCase();
     return allowed.includes(mLower) ||
            (mLower === 'ortu' && (allowed.includes('orangtua') || allowed.includes('ortu'))) ||
@@ -1596,14 +1604,23 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [
     return true;
   });
 
+  // Helper to extract clean menu list from stored string (which may have "Target: menu1, menu2")
+  const getCleanMenuList = (val: string) => {
+    if (!val) return "";
+    const str = val.toString();
+    return str.includes(':') ? str.split(':')[1].trim() : str;
+  };
+
   // Hitung ringkasan akses per rombel
   const rombelAccessSummary = availableRombels.map((r: string) => {
     const studentInRombel = students.find((s: any) => (s.rombel || "").toString().trim().toLowerCase() === r.trim().toLowerCase());
-    const access = studentInRombel?.akses_menu || "";
+    const rawAccess = studentInRombel?.akses_menu || "";
+    const cleanAccess = getCleanMenuList(rawAccess);
     return {
       rombel: r,
-      access: access 
-        ? access.split(',').map((m: string) => {
+      rawAccess: cleanAccess,
+      access: cleanAccess 
+        ? cleanAccess.split(',').map((m: string) => {
             const trimmed = m.trim().toLowerCase();
             if (trimmed === 'orangtua') return 'ortu';
             return trimmed.replace('_', ' ');
@@ -1619,11 +1636,13 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [
       const studentRombel = (s.rombel || "").toString().trim();
       return studentClass === c || studentRombel.startsWith(c) || (c === "10" && studentRombel.startsWith("X ")) || (c === "11" && studentRombel.startsWith("XI ")) || (c === "12" && studentRombel.startsWith("XII "));
     });
-    const access = studentInClass?.akses_menu || "";
+    const rawAccess = studentInClass?.akses_menu || "";
+    const cleanAccess = getCleanMenuList(rawAccess);
     return {
       kelas: c,
-      access: access 
-        ? access.split(',').map((m: string) => {
+      rawAccess: cleanAccess,
+      access: cleanAccess 
+        ? cleanAccess.split(',').map((m: string) => {
             const trimmed = m.trim().toLowerCase();
             if (trimmed === 'orangtua') return 'ortu';
             return trimmed.replace('_', ' ');
@@ -1868,8 +1887,8 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [
                         onClick={() => {
                           setForm({
                             target_kelas: item.rombel,
-                            selected_menus: item.access && item.access !== 'Belum diatur'
-                              ? item.access.split(',').map((a: string) => {
+                            selected_menus: item.rawAccess && item.rawAccess !== 'Belum diatur'
+                              ? item.rawAccess.split(',').map((a: string) => {
                                   const trimmed = a.trim().toLowerCase().replace(/\s+/g, '_');
                                   return trimmed === 'ortu' ? 'ortu' : trimmed;
                                 })
