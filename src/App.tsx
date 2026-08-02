@@ -38,6 +38,7 @@ export default function App() {
   const [statusKKFilter, setStatusKKFilter] = useState("Semua");
   const [loginFilter, setLoginFilter] = useState("Semua");
   const [notifForm, setNotifForm] = useState({ judul: '', pesan: '', tipe: 'info', nisn_target: '', target_kelas: '' });
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isEditingNotif, setIsEditingNotif] = useState(false);
   const [editingNotifRow, setEditingNotifRow] = useState<number | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -190,7 +191,11 @@ export default function App() {
       const result = await res.json();
       if (result.success) {
         setError(null);
+        setSuccessMessage(result.message || "Pengaturan akses menu berhasil disimpan!");
         fetchData();
+        setTimeout(() => {
+          setSuccessMessage(null);
+        }, 5000);
       } else {
         setError(result.error || "Gagal memperbarui akses");
       }
@@ -699,6 +704,8 @@ export default function App() {
                   uniqueRombels={uniqueRombels}
                   loading={loading}
                   students={students}
+                  successMessage={successMessage}
+                  setSuccessMessage={setSuccessMessage}
                 />
               )}
             </>
@@ -1584,7 +1591,7 @@ function KurangMampuView({
   );
 }
 
-function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [], loading, students }: any) {
+function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [], loading, students, successMessage, setSuccessMessage }: any) {
   const menuOptions = [
     'dashboard', 'rekap', 'profil', 'ortu', 'registrasi', 'periodik',
     'kurang_mampu', 'notifikasi', 'verval', 'cetak'
@@ -1669,8 +1676,28 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [
         <div className="lg:col-span-2 space-y-8">
           <div>
             <h2 className="text-2xl font-bold text-white tracking-tight mb-2">Kontrol Akses Menu</h2>
-            <p className="text-slate-500 text-sm mb-8">Atur menu apa saja yang bisa diakses oleh wali kelas atau siswa berdasarkan Kelas atau Rombel spesifik mereka.</p>
+            <p className="text-slate-500 text-sm mb-6">Atur menu apa saja yang bisa diakses oleh wali kelas atau siswa berdasarkan Kelas atau Rombel spesifik mereka.</p>
             
+            {successMessage && (
+              <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-between gap-4 animate-in fade-in duration-300">
+                <div className="flex items-center gap-3 text-emerald-400">
+                  <CheckCircle className="shrink-0 text-emerald-400" size={22} />
+                  <div>
+                    <h4 className="font-bold text-sm text-emerald-400">Berhasil Disimpan!</h4>
+                    <p className="text-xs text-emerald-300/80">{successMessage}</p>
+                  </div>
+                </div>
+                {setSuccessMessage && (
+                  <button 
+                    onClick={() => setSuccessMessage(null)}
+                    className="p-1 hover:bg-emerald-500/20 rounded-lg text-emerald-400 transition-colors"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+            )}
+
             <div className="bg-[#111633] border border-white/10 rounded-3xl p-6 md:p-8 space-y-10 shadow-xl">
               {/* Target Tingkat Kelas */}
               <div className="space-y-4">
