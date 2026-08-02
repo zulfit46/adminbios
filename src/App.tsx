@@ -688,6 +688,7 @@ export default function App() {
                   setForm={setAksesForm}
                   onSave={handleUpdateAkses}
                   uniqueClasses={uniqueClasses}
+                  uniqueRombels={uniqueRombels}
                   loading={loading}
                   students={students}
                 />
@@ -1575,34 +1576,73 @@ function KurangMampuView({
   );
 }
 
-function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading, students }: any) {
+function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [], loading, students }: any) {
   const menuOptions = [
     'dashboard', 'rekap', 'profil', 'ortu', 'registrasi', 'periodik',
     'kurang_mampu', 'notifikasi', 'verval', 'cetak'
   ];
 
+  const availableRombels = (uniqueRombels || []).filter((r: string) => r && r !== "Semua");
+  const availableClasses = (uniqueClasses || []).filter((c: string) => c && c !== "Semua");
+
+  const [rombelClassFilter, setRombelClassFilter] = useState("Semua");
+
+  const filteredRombels = availableRombels.filter((r: string) => {
+    if (rombelClassFilter === "Semua") return true;
+    const rLower = r.toLowerCase();
+    if (rombelClassFilter === "10") return rLower.startsWith("10") || rLower.startsWith("x ");
+    if (rombelClassFilter === "11") return rLower.startsWith("11") || rLower.startsWith("xi ");
+    if (rombelClassFilter === "12") return rLower.startsWith("12") || rLower.startsWith("xii ");
+    return true;
+  });
+
+  // Hitung ringkasan akses per rombel
+  const rombelAccessSummary = availableRombels.map((r: string) => {
+    const studentInRombel = students.find((s: any) => (s.rombel || "").toString().trim().toLowerCase() === r.trim().toLowerCase());
+    const access = studentInRombel?.akses_menu || "";
+    return {
+      rombel: r,
+      access: access 
+        ? access.split(',').map((m: string) => {
+            const trimmed = m.trim().toLowerCase();
+            if (trimmed === 'orangtua') return 'ortu';
+            return trimmed.replace('_', ' ');
+          }).join(', ') 
+        : 'Belum diatur'
+    };
+  });
+
   // Hitung ringkasan akses per kelas
-  const classAccessSummary = uniqueClasses
-    .filter((c: string) => c !== "Semua")
-    .map((c: string) => {
-      // Cari siswa pertama di kelas ini untuk melihat akses_menu-nya
-      const studentInClass = students.find((s: any) => {
-        const studentClass = (s.kelas && s.kelas !== "-") ? s.kelas.toString().trim() : "";
-        const studentRombel = (s.rombel || "").toString().trim();
-        return studentClass === c || studentRombel.startsWith(c) || (c === "10" && studentRombel.startsWith("X ")) || (c === "11" && studentRombel.startsWith("XI ")) || (c === "12" && studentRombel.startsWith("XII "));
-      });
-      const access = studentInClass?.akses_menu || "";
-      return {
-        kelas: c,
-        access: access 
-          ? access.split(',').map((m: string) => {
-              const trimmed = m.trim().toLowerCase();
-              if (trimmed === 'orangtua') return 'ortu';
-              return trimmed.replace('_', ' ');
-            }).join(', ') 
-          : 'Belum diatur'
-      };
+  const classAccessSummary = availableClasses.map((c: string) => {
+    const studentInClass = students.find((s: any) => {
+      const studentClass = (s.kelas && s.kelas !== "-") ? s.kelas.toString().trim() : "";
+      const studentRombel = (s.rombel || "").toString().trim();
+      return studentClass === c || studentRombel.startsWith(c) || (c === "10" && studentRombel.startsWith("X ")) || (c === "11" && studentRombel.startsWith("XI ")) || (c === "12" && studentRombel.startsWith("XII "));
     });
+    const access = studentInClass?.akses_menu || "";
+    return {
+      kelas: c,
+      access: access 
+        ? access.split(',').map((m: string) => {
+            const trimmed = m.trim().toLowerCase();
+            if (trimmed === 'orangtua') return 'ortu';
+            return trimmed.replace('_', ' ');
+          }).join(', ') 
+        : 'Belum diatur'
+    };
+  });
+
+  const selectedTargets = form.target_kelas ? form.target_kelas.split(',').map((t: string) => t.trim()).filter(Boolean) : [];
+
+  const toggleTarget = (targetVal: string) => {
+    let next;
+    if (selectedTargets.includes(targetVal)) {
+      next = selectedTargets.filter((item: string) => item !== targetVal);
+    } else {
+      next = [...selectedTargets, targetVal];
+    }
+    setForm({...form, target_kelas: next.join(',')});
+  };
 
   return (
     <div className="space-y-10 pb-10 animate-in slide-in-from-bottom-4 duration-500">
@@ -1610,20 +1650,23 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading, students
         <div className="lg:col-span-2 space-y-8">
           <div>
             <h2 className="text-2xl font-bold text-white tracking-tight mb-2">Kontrol Akses Menu</h2>
-            <p className="text-slate-500 text-sm mb-8">Atur menu apa saja yang bisa diakses oleh siswa berdasarkan kelas mereka.</p>
+            <p className="text-slate-500 text-sm mb-8">Atur menu apa saja yang bisa diakses oleh wali kelas atau siswa berdasarkan Kelas atau Rombel spesifik mereka.</p>
             
-            <div className="bg-[#111633] border border-white/10 rounded-3xl p-8 space-y-10 shadow-xl">
-              {/* Target Kelas */}
+            <div className="bg-[#111633] border border-white/10 rounded-3xl p-6 md:p-8 space-y-10 shadow-xl">
+              {/* Target Tingkat Kelas */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Target Kelas</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Target Tingkat Kelas (Semua Rombel di Kelas ini)</label>
                   <div className="flex gap-2 text-[11px] font-medium">
                     <button
                       type="button"
-                      onClick={() => setForm({...form, target_kelas: uniqueClasses.filter((c: string) => c !== "Semua").join(',')})}
+                      onClick={() => {
+                        const merged = Array.from(new Set([...selectedTargets, ...availableClasses]));
+                        setForm({...form, target_kelas: merged.join(',')});
+                      }}
                       className="text-blue-400 hover:text-blue-300 transition-colors font-semibold"
                     >
-                      Pilih Semua
+                      Pilih Semua Kelas
                     </button>
                     <span className="text-slate-600">|</span>
                     <button
@@ -1636,28 +1679,20 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading, students
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {uniqueClasses.filter((c: string) => c !== "Semua").map((c: string) => {
-                    const isSelected = form.target_kelas.split(',').filter(Boolean).includes(c);
+                  {availableClasses.map((c: string) => {
+                    const isSelected = selectedTargets.includes(c);
                     return (
                       <button
                         key={c}
                         type="button"
-                        onClick={() => {
-                          const current = form.target_kelas ? form.target_kelas.split(',').filter(Boolean) : [];
-                          let next;
-                          if (current.includes(c)) {
-                            next = current.filter((item: string) => item !== c);
-                          } else {
-                            next = [...current, c];
-                          }
-                          setForm({...form, target_kelas: next.join(',')});
-                        }}
-                        className={`px-5 py-3 rounded-2xl text-xs font-bold transition-all border ${
+                        onClick={() => toggleTarget(c)}
+                        className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all border flex items-center gap-2 ${
                           isSelected 
                             ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20' 
                             : 'bg-[#080a1a] border-white/10 text-slate-400 hover:border-white/20'
                         }`}
                       >
+                        <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : 'bg-slate-600'}`} />
                         Kelas {c}
                       </button>
                     );
@@ -1665,8 +1700,82 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading, students
                 </div>
               </div>
 
+              {/* Target Rombel Spesifik */}
+              <div className="space-y-4 pt-4 border-t border-white/10">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-purple-400 uppercase tracking-widest ml-1">Pilih Target Rombel Spesifik</label>
+                    <p className="text-[11px] text-slate-400 ml-1">Pilih rombel tertentu jika ingin memberikan akses khusus per rombel (contoh: 10 AKL 1)</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">Filter:</span>
+                    <div className="flex gap-1 bg-[#080a1a] p-1 rounded-xl border border-white/10 text-xs">
+                      {["Semua", ...availableClasses].map((cf: string) => (
+                        <button
+                          key={cf}
+                          type="button"
+                          onClick={() => setRombelClassFilter(cf)}
+                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all ${
+                            rombelClassFilter === cf
+                              ? 'bg-purple-600 text-white'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {cf === "Semua" ? "Semua" : `Kls ${cf}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1 custom-scrollbar">
+                  {filteredRombels.length === 0 ? (
+                    <span className="text-xs text-slate-500 italic p-2">Tidak ada data Rombel ditemukan</span>
+                  ) : (
+                    filteredRombels.map((r: string) => {
+                      const isSelected = selectedTargets.includes(r);
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => toggleTarget(r)}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 ${
+                            isSelected 
+                              ? 'bg-purple-600 border-purple-500 text-white shadow-lg shadow-purple-600/30' 
+                              : 'bg-[#080a1a] border-white/10 text-slate-300 hover:border-purple-500/40 hover:text-white'
+                          }`}
+                        >
+                          <div className={`w-3.5 h-3.5 rounded-md border flex items-center justify-center ${
+                            isSelected ? 'bg-white border-white text-purple-600' : 'border-slate-600'
+                          }`}>
+                            {isSelected && <CheckCircle size={10} className="fill-purple-600 text-white" />}
+                          </div>
+                          <span>{r}</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+
+                {selectedTargets.length > 0 && (
+                  <div className="bg-purple-950/30 border border-purple-500/20 rounded-xl p-3 flex items-center justify-between text-xs text-purple-200">
+                    <div>
+                      <span className="font-bold text-purple-300">Target terpilih ({selectedTargets.length}):</span>{" "}
+                      <span className="text-slate-300">{selectedTargets.join(', ')}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setForm({...form, target_kelas: ''})}
+                      className="text-red-400 hover:text-red-300 text-[11px] font-bold underline ml-2 shrink-0"
+                    >
+                      Hapus Semua Target
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Pilih Menu */}
-              <div className="space-y-4">
+              <div className="space-y-4 pt-4 border-t border-white/10">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Pilih Menu yang Diizinkan</label>
                   <div className="flex gap-2 text-[11px] font-medium">
@@ -1675,7 +1784,7 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading, students
                       onClick={() => setForm({...form, selected_menus: [...menuOptions]})}
                       className="text-blue-400 hover:text-blue-300 transition-colors font-semibold"
                     >
-                      Pilih Semua
+                      Pilih Semua Menu
                     </button>
                     <span className="text-slate-600">|</span>
                     <button
@@ -1724,7 +1833,7 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading, students
               <button 
                 onClick={onSave}
                 disabled={loading}
-                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-blue-600/20 active:scale-[0.98]"
+                className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:opacity-90 disabled:opacity-50 text-white font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-indigo-600/20 active:scale-[0.98]"
               >
                 {loading ? <RefreshCw className="animate-spin" size={20} /> : (
                   <>
@@ -1739,16 +1848,60 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, loading, students
         {/* Ringkasan Akses */}
         <div className="space-y-6">
           <h3 className="text-lg font-bold text-white tracking-tight">Ringkasan Akses Saat Ini</h3>
-          <div className="space-y-4">
-            {classAccessSummary.map((item: any) => (
-              <div key={item.kelas} className="bg-[#111633] border border-white/10 rounded-2xl p-5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Kelas {item.kelas}</span>
-                  <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
+          
+          {/* Summary Rombel */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold text-purple-400 uppercase tracking-widest">Akses Per Rombel</h4>
+            <div className="space-y-2 max-h-96 overflow-y-auto pr-1 custom-scrollbar">
+              {rombelAccessSummary.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">Belum ada data rombel</p>
+              ) : (
+                rombelAccessSummary.map((item: any) => (
+                  <div key={item.rombel} className="bg-[#111633] border border-white/10 rounded-2xl p-4 space-y-1.5 hover:border-purple-500/30 transition-all">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]"></span>
+                        {item.rombel}
+                      </span>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setForm({
+                            target_kelas: item.rombel,
+                            selected_menus: item.access && item.access !== 'Belum diatur'
+                              ? item.access.split(',').map((a: string) => {
+                                  const trimmed = a.trim().toLowerCase().replace(/\s+/g, '_');
+                                  return trimmed === 'ortu' ? 'ortu' : trimmed;
+                                })
+                              : []
+                          });
+                        }}
+                        className="text-[10px] font-bold text-purple-400 hover:underline"
+                      >
+                        Edit Akses
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-400 capitalize truncate">{item.access}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Summary Kelas */}
+          <div className="space-y-3 pt-4 border-t border-white/10">
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Akses Per Tingkat Kelas</h4>
+            <div className="space-y-2">
+              {classAccessSummary.map((item: any) => (
+                <div key={item.kelas} className="bg-[#111633] border border-white/10 rounded-2xl p-4 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-400">Kelas {item.kelas}</span>
+                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                  </div>
+                  <p className="text-xs text-slate-400 capitalize truncate">{item.access}</p>
                 </div>
-                <p className="text-sm font-bold text-white capitalize">{item.access}</p>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       </div>
