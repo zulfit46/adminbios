@@ -57,12 +57,17 @@ export default function App() {
       const result = await res.json();
       if (result.success) {
         setUser(result.user);
-        if (result.user.status === 'user' && result.user.rombel) {
-          setRombelFilter(result.user.rombel);
+        if (result.user.status !== 'admin' && result.user.rombel) {
+          const rList = result.user.rombel.toString().split(',').map((r: string) => r.trim()).filter(Boolean);
+          if (rList.length > 1) {
+            setRombelFilter("Semua");
+          } else if (rList.length === 1) {
+            setRombelFilter(rList[0]);
+          }
         }
         // Langsung tampilkan menu Data Siswa dan sub-menu Rekap Inputan
         setActiveTab('data');
-        if (result.user.status === 'user' && result.user.akses_menu) {
+        if (result.user.status !== 'admin' && result.user.akses_menu) {
           let rawAkses = result.user.akses_menu.toString();
           if (rawAkses.includes(':')) {
             rawAkses = rawAkses.split(':')[1].trim();
@@ -247,14 +252,29 @@ export default function App() {
     if (user) fetchData(); 
   }, [user]);
 
+  const userRombelList = useMemo(() => {
+    if (!user || user.status === 'admin' || !user.rombel) return null;
+    const list = user.rombel.toString().split(',').map((r: string) => r.trim()).filter(Boolean);
+    return list.length > 0 ? list : null;
+  }, [user]);
+
   const filteredStudents = students
     .filter(s => {
       const matchesSearch = (s.nama || "").toLowerCase().includes(search.toLowerCase()) || 
                            (s.nisn || "").includes(search);
       
-      // Filter Rombel: Jika user, paksa ke rombel user. Jika admin, bebas.
-      const targetRombel = user?.status === 'user' ? user.rombel : rombelFilter;
-      const matchesRombel = targetRombel === "Semua" || s.rombel === targetRombel;
+      // Filter Rombel
+      let matchesRombel = true;
+      const sRombel = (s.rombel || "").toString().trim();
+      if (userRombelList) {
+        if (rombelFilter === "Semua") {
+          matchesRombel = userRombelList.includes(sRombel);
+        } else {
+          matchesRombel = sRombel === rombelFilter && userRombelList.includes(sRombel);
+        }
+      } else {
+        matchesRombel = rombelFilter === "Semua" || sRombel === rombelFilter;
+      }
 
       // Filter Verval
       const matchesVerval = vervalFilter === "Semua" || 
@@ -292,8 +312,17 @@ export default function App() {
       const matchesSearch = (s.nama || "").toLowerCase().includes(search.toLowerCase()) || 
                            (s.nisn || "").includes(search);
       
-      const targetRombel = user?.status === 'user' ? user.rombel : rombelFilter;
-      const matchesRombel = targetRombel === "Semua" || s.rombel === targetRombel;
+      let matchesRombel = true;
+      const sRombel = (s.rombel || "").toString().trim();
+      if (userRombelList) {
+        if (rombelFilter === "Semua") {
+          matchesRombel = userRombelList.includes(sRombel);
+        } else {
+          matchesRombel = sRombel === rombelFilter && userRombelList.includes(sRombel);
+        }
+      } else {
+        matchesRombel = rombelFilter === "Semua" || sRombel === rombelFilter;
+      }
       
       return matchesSearch && matchesRombel;
     })
@@ -325,7 +354,17 @@ export default function App() {
     return null;
   };
 
-  const uniqueRombels = ["Semua", ...new Set(students.map(s => s.rombel).filter(Boolean))].sort();
+  const uniqueRombels = useMemo(() => {
+    const allDbRombels = Array.from(new Set(students.map(s => s.rombel).filter(Boolean))).sort();
+    if (user?.status === 'admin' || !userRombelList) {
+      return ["Semua", ...allDbRombels];
+    }
+    if (userRombelList.length > 1) {
+      return ["Semua", ...Array.from(new Set(userRombelList)).sort()];
+    }
+    return userRombelList;
+  }, [students, user, userRombelList]);
+
   const uniqueStatusVerval = ["Semua", ...new Set(students.map(s => s.status_verval).filter(Boolean))].sort();
   const uniqueStatusKK = ["Semua", ...new Set(students.map(s => s.status_kk).filter(Boolean))].sort();
 
@@ -342,10 +381,13 @@ export default function App() {
 
   const uniqueClasses = ["Semua", ...validClasses];
 
-  // Calculate stats based on user scope (Admin = All, User = Their Rombel)
-  const studentsInScope = user?.status === 'user' 
-    ? students.filter(s => s.rombel === user.rombel)
-    : students;
+  // Calculate stats based on user scope (Admin = All, User/Kaprog = Their Assigned Rombels)
+  const studentsInScope = useMemo(() => {
+    if (userRombelList) {
+      return students.filter(s => userRombelList.includes((s.rombel || "").toString().trim()));
+    }
+    return students;
+  }, [students, userRombelList]);
 
   const displayStats = useMemo(() => {
     if (!studentsInScope.length) return null;
@@ -1268,8 +1310,8 @@ function DataSiswaView({
           <select 
             value={rombelFilter}
             onChange={(e) => setRombelFilter(e.target.value)}
-            disabled={isUser}
-            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={uniqueRombels.length <= 1}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {uniqueRombels.map((r: string) => (
               <option key={r} value={r}>{r}</option>
@@ -1413,8 +1455,8 @@ function ProfilSiswaView({
           <select 
             value={rombelFilter}
             onChange={(e) => setRombelFilter(e.target.value)}
-            disabled={isUser}
-            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={uniqueRombels.length <= 1}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {uniqueRombels.map((r: string) => (
               <option key={r} value={r}>{r}</option>
@@ -1521,8 +1563,8 @@ function KurangMampuView({
           <select 
             value={rombelFilter}
             onChange={(e) => setRombelFilter(e.target.value)}
-            disabled={isUser}
-            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={uniqueRombels.length <= 1}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {uniqueRombels.map((r: string) => (
               <option key={r} value={r}>{r}</option>
@@ -2170,8 +2212,8 @@ function OrangTuaView({
           <select 
             value={rombelFilter}
             onChange={(e) => setRombelFilter(e.target.value)}
-            disabled={isUser}
-            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={uniqueRombels.length <= 1}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {uniqueRombels.map((r: string) => (
               <option key={r} value={r}>{r}</option>
@@ -2283,8 +2325,8 @@ function RegistrasiView({
           <select 
             value={rombelFilter}
             onChange={(e) => setRombelFilter(e.target.value)}
-            disabled={isUser}
-            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={uniqueRombels.length <= 1}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {uniqueRombels.map((r: string) => (
               <option key={r} value={r}>{r}</option>
@@ -2355,8 +2397,8 @@ function PeriodikView({
           <select 
             value={rombelFilter}
             onChange={(e) => setRombelFilter(e.target.value)}
-            disabled={isUser}
-            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={uniqueRombels.length <= 1}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {uniqueRombels.map((r: string) => (
               <option key={r} value={r}>{r}</option>
@@ -2906,8 +2948,8 @@ function RekapInputanView({
           <select 
             value={rombelFilter}
             onChange={(e) => setRombelFilter(e.target.value)}
-            disabled={isUser}
-            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${isUser ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={uniqueRombels.length <= 1}
+            className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {uniqueRombels.map((r: string) => (
               <option key={r} value={r}>{r}</option>
