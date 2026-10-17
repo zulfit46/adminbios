@@ -11,18 +11,42 @@ import {
   Menu, X, TrendingUp, TrendingDown,
   MoreHorizontal, Globe, User, Settings,
   FileText, CreditCard, Layout, ShieldCheck,
-  Edit2
+  Edit2, Eye
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, AreaChart, Area, RadialBarChart, RadialBar, Legend
 } from 'recharts';
+import {
+  formatAgama,
+  formatJenisKelamin,
+  formatJenisTinggal,
+  formatAlatTransportasi,
+  formatJenjangPendidikan,
+  formatPekerjaan,
+  formatPenghasilan,
+  formatStatusHidup,
+  formatHobi,
+  formatCitaCita,
+  formatJarak,
+  formatKurangMampu
+} from './utils/dapodikHelper';
 
-// GANTI DENGAN URL DEPLOY ADMIN BACKEND ANDA
-const API_URL = "https://script.google.com/macros/s/AKfycbzi-HtfbXyceKafIsQXTRs62LwxeVdwtgs2QZJzpxNsFA1v0QgFVHH037sTo8pCXfqR/exec";
+import {
+  SPREADSHEET_ID,
+  getActiveApiUrl,
+  setActiveApiUrl,
+  loginWithFallback,
+  fetchAllDataWithFallback,
+  isValidStudent
+} from './utils/spreadsheetService';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
+  const [apiUrl, setApiUrl] = useState<string>(getActiveApiUrl());
+  const [dataSource, setDataSource] = useState<'gas' | 'sheets' | null>(null);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [tempApiUrl, setTempApiUrl] = useState(getActiveApiUrl());
   const [activeTab, setActiveTab] = useState('data');
   const [activeSubTab, setActiveSubTab] = useState('rekap');
   const [loading, setLoading] = useState(false);
@@ -48,15 +72,57 @@ export default function App() {
   const [aksesForm, setAksesForm] = useState({ target_kelas: '', selected_menus: [] as string[] });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // Restore saved session from localStorage
+  useEffect(() => {
+    try {
+      const savedUser = localStorage.getItem('dapodik_admin_user');
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        if (parsed && (parsed.login || parsed.nama)) {
+          setUser(parsed);
+          if (parsed.status !== 'admin' && parsed.rombel) {
+            const rList = parsed.rombel.toString().split(',').map((r: string) => r.trim()).filter(Boolean);
+            if (rList.length > 1) {
+              setRombelFilter("Semua");
+            } else if (rList.length === 1) {
+              setRombelFilter(rList[0]);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Gagal memuat sesi tersimpan:", e);
+    }
+  }, []);
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('dapodik_admin_user');
+    } catch (_) {}
+    setUser(null);
+    setActiveTab('dashboard');
+    setIsSidebarOpen(false);
+  };
+
   // Login Logic
   const handleLogin = async (loginId: string) => {
+    const cleanId = (loginId || '').trim();
+    if (!cleanId) {
+      setError("Masukkan ID Login atau NIP Anda.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}?action=login&login=${loginId}`);
-      const result = await res.json();
-      if (result.success) {
+      const result = await loginWithFallback(cleanId, apiUrl);
+
+      if (result.success && result.user) {
         setUser(result.user);
+        try {
+          localStorage.setItem('dapodik_admin_user', JSON.stringify(result.user));
+        } catch (_) {}
+
         if (result.user.status !== 'admin' && result.user.rombel) {
           const rList = result.user.rombel.toString().split(',').map((r: string) => r.trim()).filter(Boolean);
           if (rList.length > 1) {
@@ -84,14 +150,15 @@ export default function App() {
         } else {
           setActiveSubTab('rekap');
         }
-        fetchData();
       } else {
-        setError(result.error || "Login gagal. Periksa ID Login Anda.");
+        setError(result.error || "ID Login atau NIP tidak ditemukan. Periksa kembali ID Anda.");
       }
     } catch (e: any) {
-      setError("Gagal terhubung ke server login.");
+      console.warn("Koneksi login:", e);
+      setError("Gagal memproses login. Pastikan koneksi internet aktif.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleSendNotif = async () => {
@@ -104,23 +171,33 @@ export default function App() {
       const action = isEditingNotif ? 'update_notif' : 'send_notif';
       const body = isEditingNotif ? { ...notifForm, row: editingNotifRow } : notifForm;
       
-      const res = await fetch(`${API_URL}?action=${action}`, {
+      const res = await fetch(`${apiUrl}?action=${action}`, {
         method: 'POST',
         body: JSON.stringify(body)
       });
-      const result = await res.json();
+      const text = await res.text();
+      let result: any;
+      try {
+        result = JSON.parse(text);
+      } catch (_) {
+        setError("Fitur ini membutuhkan Web App Google Apps Script aktif. Periksa URL Web App di Pengaturan.");
+        setLoading(false);
+        return;
+      }
       if (result.success) {
         setNotifForm({ judul: '', pesan: '', tipe: 'info', nisn_target: '', target_kelas: '' });
         setIsEditingNotif(false);
         setEditingNotifRow(null);
         fetchData();
       } else {
-        setError(result.error || "Gagal memproses notifikasi");
+        setError(result.error || "Gagal menyimpan notifikasi.");
       }
     } catch (e: any) {
-      setError("Gagal terhubung ke server.");
+      console.warn("Gagal terhubung server notif:", e);
+      setError("Gagal menghubungi server Google Apps Script.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleDeleteNotif = (row: number) => {
@@ -133,21 +210,28 @@ export default function App() {
     setLoading(true);
     setShowDeleteConfirm(false);
     try {
-      const res = await fetch(`${API_URL}?action=delete_notif`, {
+      const res = await fetch(`${apiUrl}?action=delete_notif`, {
         method: 'POST',
         body: JSON.stringify({ row: notifRowToDelete })
       });
-      const result = await res.json();
+      const text = await res.text();
+      let result: any;
+      try {
+        result = JSON.parse(text);
+      } catch (_) {
+        setError("Operasi hapus membutuhkan Web App Google Apps Script yang aktif.");
+        setLoading(false);
+        return;
+      }
       if (result.success) {
         fetchData();
-      } else {
-        setError(result.error || "Gagal menghapus notifikasi");
       }
     } catch (e: any) {
-      setError("Gagal terhubung ke server.");
+      console.warn("Gagal terhubung saat hapus notif:", e);
+    } finally {
+      setNotifRowToDelete(null);
+      setLoading(false);
     }
-    setNotifRowToDelete(null);
-    setLoading(false);
   };
 
   const handleDeleteSiswa = (nisn: string) => {
@@ -160,21 +244,28 @@ export default function App() {
     setLoading(true);
     setShowSiswaDeleteConfirm(false);
     try {
-      const res = await fetch(`${API_URL}?action=delete_student`, {
+      const res = await fetch(`${apiUrl}?action=delete_student`, {
         method: 'POST',
         body: JSON.stringify({ nisn: siswaToDelete })
       });
-      const result = await res.json();
+      const text = await res.text();
+      let result: any;
+      try {
+        result = JSON.parse(text);
+      } catch (_) {
+        setError("Operasi hapus membutuhkan Web App Google Apps Script yang aktif.");
+        setLoading(false);
+        return;
+      }
       if (result.success) {
         fetchData();
-      } else {
-        setError(result.error || "Gagal menghapus data siswa");
       }
     } catch (e: any) {
-      setError("Gagal terhubung ke server.");
+      console.warn("Gagal terhubung saat hapus siswa:", e);
+    } finally {
+      setSiswaToDelete(null);
+      setLoading(false);
     }
-    setSiswaToDelete(null);
-    setLoading(false);
   };
 
   const handleUpdateAkses = async () => {
@@ -186,14 +277,22 @@ export default function App() {
     try {
       // Jika memilih "ortu" di UI, disimpan sebagai "orangtua" di spreadsheet
       const formattedMenus = aksesForm.selected_menus.map((m: string) => m === 'ortu' ? 'orangtua' : m);
-      const res = await fetch(`${API_URL}?action=update_akses_bulk`, {
+      const res = await fetch(`${apiUrl}?action=update_akses_bulk`, {
         method: 'POST',
         body: JSON.stringify({
           target_kelas: aksesForm.target_kelas,
           akses_menu: formattedMenus.join(',')
         })
       });
-      const result = await res.json();
+      const text = await res.text();
+      let result: any;
+      try {
+        result = JSON.parse(text);
+      } catch (_) {
+        setError("Simpan akses membutuhkan Web App Google Apps Script yang aktif.");
+        setLoading(false);
+        return;
+      }
       if (result.success) {
         setError(null);
         setSuccessMessage(result.message || "Pengaturan akses menu berhasil disimpan!");
@@ -201,11 +300,9 @@ export default function App() {
         setTimeout(() => {
           setSuccessMessage(null);
         }, 5000);
-      } else {
-        setError(result.error || "Gagal memperbarui akses");
       }
     } catch (err) {
-      setError("Gagal terhubung ke server.");
+      console.warn("Gagal terhubung saat simpan akses:", err);
     } finally {
       setLoading(false);
     }
@@ -216,36 +313,22 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}?action=get_all_data`);
-      
-      // Cek apakah respon sukses (200 OK)
-      if (!res.ok) {
-        throw new Error(`Server kembali dengan status ${res.status}`);
-      }
-
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Server tidak mengirimkan data JSON. Pastikan Web App sudah di-deploy dengan benar sebagai 'Anyone'.");
-      }
-
-      const result = await res.json();
+      const result = await fetchAllDataWithFallback(apiUrl);
       if (result.success) {
         setStudents(result.students || []);
         setKurangMampu(result.kurangMampu || []);
         setNotifications(result.notifications || []);
         setStats(result.stats || {});
+        setDataSource(result.source);
       } else {
-        setError(result.error || result.message || "Gagal mengambil data dari server.");
+        setError(result.error || "Gagal memuat data dari Spreadsheet.");
       }
     } catch (e: any) { 
-      console.error("Fetch Error:", e);
-      if (e.message.includes("Unexpected token")) {
-        setError("Format data salah (Bukan JSON). Ini biasanya karena script Google Apps Script Anda error atau belum di-deploy sebagai 'Anyone'.");
-      } else {
-        setError(e.message || "Gagal terhubung ke server.");
-      }
+      console.warn("Fetch data notice:", e);
+      setError("Gagal memuat data siswa. Periksa koneksi internet.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => { 
@@ -258,79 +341,98 @@ export default function App() {
     return list.length > 0 ? list : null;
   }, [user]);
 
-  const filteredStudents = students
-    .filter(s => {
-      const matchesSearch = (s.nama || "").toLowerCase().includes(search.toLowerCase()) || 
-                           (s.nisn || "").includes(search);
-      
-      // Filter Rombel
-      let matchesRombel = true;
-      const sRombel = (s.rombel || "").toString().trim();
-      if (userRombelList) {
-        if (rombelFilter === "Semua") {
-          matchesRombel = userRombelList.includes(sRombel);
+  const filteredStudents = useMemo(() => {
+    return students
+      .filter(s => {
+        // Hanya proses siswa yang valid (memiliki NISN dan Nama, bukan baris kosong/dummy nomor indeks kolom)
+        if (!isValidStudent(s)) return false;
+
+        const matchesSearch = (s.nama || "").toLowerCase().includes(search.toLowerCase()) || 
+                             (s.nisn || "").includes(search);
+        
+        // Filter Rombel
+        let matchesRombel = true;
+        const sRombel = (s.rombel || "").toString().trim();
+        if (userRombelList) {
+          if (rombelFilter === "Semua") {
+            matchesRombel = userRombelList.includes(sRombel);
+          } else {
+            matchesRombel = sRombel === rombelFilter && userRombelList.includes(sRombel);
+          }
         } else {
-          matchesRombel = sRombel === rombelFilter && userRombelList.includes(sRombel);
+          matchesRombel = rombelFilter === "Semua" || sRombel === rombelFilter;
         }
-      } else {
-        matchesRombel = rombelFilter === "Semua" || sRombel === rombelFilter;
-      }
 
-      // Filter Verval
-      const matchesVerval = vervalFilter === "Semua" || 
-                           (vervalFilter === "Sudah Verval" && (s.status_verval || "").toString().trim() !== "") ||
-                           (vervalFilter === "Belum Verval" && (s.status_verval || "").toString().trim() === "");
+        // Filter Verval
+        const matchesVerval = vervalFilter === "Semua" || 
+                             (vervalFilter === "Sudah Verval" && (s.status_verval || "").toString().trim() !== "") ||
+                             (vervalFilter === "Belum Verval" && (s.status_verval || "").toString().trim() === "");
 
-      // Filter Status Verval (Admin Only)
-      const matchesStatusVerval = user?.status !== 'admin' || statusVervalFilter === "Semua" || s.status_verval === statusVervalFilter;
-      
-      // Filter Status KK (Admin Only)
-      const matchesStatusKK = user?.status !== 'admin' || statusKKFilter === "Semua" || s.status_kk === statusKKFilter;
-      
-      // Filter Login
-      const loginData = s.terakhir_login || s.terakhir_login_siswa || "";
-      const hasLoggedIn = loginData.toString().trim() !== "";
-      const matchesLogin = loginFilter === "Semua" || 
-                          (loginFilter === "Sudah Login" && hasLoggedIn) ||
-                          (loginFilter === "Belum Login" && !hasLoggedIn);
-      
-      return matchesSearch && matchesRombel && matchesVerval && matchesStatusVerval && matchesStatusKK && matchesLogin;
-    })
-    .sort((a, b) => {
-      const rombelA = (a.rombel || "").toString();
-      const rombelB = (b.rombel || "").toString();
-      const res = rombelA.localeCompare(rombelB, undefined, { numeric: true, sensitivity: 'base' });
-      if (res !== 0) return res;
-      
-      const jurusanA = (a.jurusan || "").toString();
-      const jurusanB = (b.jurusan || "").toString();
-      return jurusanA.localeCompare(jurusanB, undefined, { numeric: true, sensitivity: 'base' });
-    });
+        // Filter Status Verval (Admin Only)
+        const matchesStatusVerval = user?.status !== 'admin' || statusVervalFilter === "Semua" || s.status_verval === statusVervalFilter;
+        
+        // Filter Status KK (Admin Only)
+        const matchesStatusKK = user?.status !== 'admin' || statusKKFilter === "Semua" || s.status_kk === statusKKFilter;
+        
+        // Filter Login
+        const loginData = s.terakhir_login || s.terakhir_login_siswa || "";
+        const hasLoggedIn = loginData.toString().trim() !== "";
+        const matchesLogin = loginFilter === "Semua" || 
+                            (loginFilter === "Sudah Login" && hasLoggedIn) ||
+                            (loginFilter === "Belum Login" && !hasLoggedIn);
+        
+        return matchesSearch && matchesRombel && matchesVerval && matchesStatusVerval && matchesStatusKK && matchesLogin;
+      })
+      .sort((a, b) => {
+        const rombelA = (a.rombel || "").toString().trim();
+        const rombelB = (b.rombel || "").toString().trim();
+        // Siswa dengan rombel kosong diletakkan di bagian akhir
+        if (!rombelA && rombelB) return 1;
+        if (rombelA && !rombelB) return -1;
+        const res = rombelA.localeCompare(rombelB, undefined, { numeric: true, sensitivity: 'base' });
+        if (res !== 0) return res;
+        
+        const namaA = (a.nama || "").toString().trim();
+        const namaB = (b.nama || "").toString().trim();
+        return namaA.localeCompare(namaB, undefined, { sensitivity: 'base' });
+      });
+  }, [students, search, rombelFilter, vervalFilter, statusVervalFilter, statusKKFilter, loginFilter, user, userRombelList]);
 
-  const filteredKurangMampu = kurangMampu
-    .filter(s => {
-      const matchesSearch = (s.nama || "").toLowerCase().includes(search.toLowerCase()) || 
-                           (s.nisn || "").includes(search);
-      
-      let matchesRombel = true;
-      const sRombel = (s.rombel || "").toString().trim();
-      if (userRombelList) {
-        if (rombelFilter === "Semua") {
-          matchesRombel = userRombelList.includes(sRombel);
+  const filteredKurangMampu = useMemo(() => {
+    return kurangMampu
+      .filter(s => {
+        if (!isValidStudent(s)) return false;
+
+        const matchesSearch = (s.nama || "").toLowerCase().includes(search.toLowerCase()) || 
+                             (s.nisn || "").includes(search);
+        
+        let matchesRombel = true;
+        const sRombel = (s.rombel || "").toString().trim();
+        if (userRombelList) {
+          if (rombelFilter === "Semua") {
+            matchesRombel = userRombelList.includes(sRombel);
+          } else {
+            matchesRombel = sRombel === rombelFilter && userRombelList.includes(sRombel);
+          }
         } else {
-          matchesRombel = sRombel === rombelFilter && userRombelList.includes(sRombel);
+          matchesRombel = rombelFilter === "Semua" || sRombel === rombelFilter;
         }
-      } else {
-        matchesRombel = rombelFilter === "Semua" || sRombel === rombelFilter;
-      }
-      
-      return matchesSearch && matchesRombel;
-    })
-    .sort((a, b) => {
-      const rombelA = (a.rombel || "").toString();
-      const rombelB = (b.rombel || "").toString();
-      return rombelA.localeCompare(rombelB, undefined, { numeric: true, sensitivity: 'base' });
-    });
+        
+        return matchesSearch && matchesRombel;
+      })
+      .sort((a, b) => {
+        const rombelA = (a.rombel || "").toString().trim();
+        const rombelB = (b.rombel || "").toString().trim();
+        if (!rombelA && rombelB) return 1;
+        if (rombelA && !rombelB) return -1;
+        const res = rombelA.localeCompare(rombelB, undefined, { numeric: true, sensitivity: 'base' });
+        if (res !== 0) return res;
+
+        const namaA = (a.nama || "").toString().trim();
+        const namaB = (b.nama || "").toString().trim();
+        return namaA.localeCompare(namaB, undefined, { sensitivity: 'base' });
+      });
+  }, [kurangMampu, search, rombelFilter, userRombelList]);
 
   const getClassFromStudent = (s: any) => {
     if (s.kelas && s.kelas !== "-" && s.kelas.toString().trim() !== "") {
@@ -355,28 +457,34 @@ export default function App() {
   };
 
   const uniqueRombels = useMemo(() => {
-    const allDbRombels = Array.from(new Set(students.map(s => s.rombel).filter(Boolean))).sort();
+    const allDbRombels = Array.from(new Set(students.map(s => (s.rombel || "").toString().trim()).filter(Boolean)))
+      .filter(r => r !== "Semua")
+      .sort();
     if (user?.status === 'admin' || !userRombelList) {
       return ["Semua", ...allDbRombels];
     }
-    if (userRombelList.length > 1) {
-      return ["Semua", ...Array.from(new Set(userRombelList)).sort()];
+    const cleanUserRombels = Array.from(new Set(userRombelList.map((r: string) => (r || "").toString().trim()).filter(Boolean)))
+      .filter(r => r !== "Semua")
+      .sort();
+    if (cleanUserRombels.length > 1) {
+      return ["Semua", ...cleanUserRombels];
     }
-    return userRombelList;
+    return cleanUserRombels.length > 0 ? cleanUserRombels : ["Semua"];
   }, [students, user, userRombelList]);
 
-  const uniqueStatusVerval = ["Semua", ...new Set(students.map(s => s.status_verval).filter(Boolean))].sort();
-  const uniqueStatusKK = ["Semua", ...new Set(students.map(s => s.status_kk).filter(Boolean))].sort();
+  const uniqueStatusVerval = ["Semua", ...Array.from(new Set(students.map(s => s.status_verval).filter(Boolean))).filter(v => v !== "Semua")].sort();
+  const uniqueStatusKK = ["Semua", ...Array.from(new Set(students.map(s => s.status_kk).filter(Boolean))).filter(v => v !== "Semua")].sort();
 
   const extractedClasses: string[] = Array.from(
     new Set(
       students
         .map(s => getClassFromStudent(s))
-        .filter((c): c is string => typeof c === 'string' && c.length > 0 && c !== "-")
+        .filter((c): c is string => typeof c === 'string' && c.length > 0 && c !== "-" && c !== "Semua")
     )
   );
   const defaultClasses: string[] = ["10", "11", "12"];
   const validClasses: string[] = Array.from(new Set<string>([...extractedClasses, ...defaultClasses]))
+    .filter(c => c !== "Semua")
     .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
   const uniqueClasses = ["Semua", ...validClasses];
@@ -541,7 +649,7 @@ export default function App() {
 
         <div className="p-4 mt-auto">
           <button 
-            onClick={() => { setUser(null); setActiveTab('dashboard'); setIsSidebarOpen(false); }}
+            onClick={handleLogout}
             className="w-full py-3 bg-[#161b22] hover:bg-white/5 text-slate-400 hover:text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-white/5"
           >
             Sign Out <LogOut size={14} />
@@ -559,13 +667,45 @@ export default function App() {
                  activeTab === 'notif' ? 'Notifikasi' : 'Analytics'}
               </h1>
             )}
-            <div className="flex items-center gap-4">
-              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-[#111633] border border-white/10 rounded-lg text-[10px] font-bold text-slate-400">
-                <span className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center text-[8px] text-white">UK</span>
-                <span>English</span>
+            <div className="flex items-center gap-3">
+              {/* Data Connection Status Pill */}
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-[#111633] border border-white/10 rounded-xl text-xs">
+                <span className={`w-2 h-2 rounded-full ${students.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                <span className="font-semibold text-slate-300">
+                  {students.length > 0 ? `${students.length} Siswa Terhubung` : 'Memuat data...'}
+                </span>
+                {dataSource === 'sheets' && (
+                  <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-medium border border-emerald-500/20">
+                    Live Sheet
+                  </span>
+                )}
               </div>
-              <button className="p-2 bg-[#111633] border border-white/10 rounded-lg text-slate-400 hover:text-white transition-colors relative">
-                <Bell size={20} />
+
+              {/* Refresh Button */}
+              <button 
+                onClick={fetchData}
+                disabled={loading}
+                title="Segarkan data siswa"
+                className="p-2.5 bg-[#111633] hover:bg-white/10 border border-white/10 rounded-xl text-slate-300 hover:text-white transition-colors"
+              >
+                <RefreshCw size={16} className={loading ? 'animate-spin text-purple-400' : ''} />
+              </button>
+
+              {user?.status === 'admin' && (
+                <button
+                  onClick={() => {
+                    setTempApiUrl(apiUrl);
+                    setShowConfigModal(true);
+                  }}
+                  title="Pengaturan URL Web App Google Apps Script"
+                  className="p-2.5 bg-[#111633] hover:bg-white/10 border border-white/10 rounded-xl text-slate-300 hover:text-white transition-colors"
+                >
+                  <Settings size={16} />
+                </button>
+              )}
+
+              <button className="p-2.5 bg-[#111633] border border-white/10 rounded-xl text-slate-400 hover:text-white transition-colors relative">
+                <Bell size={18} />
                 <span className="absolute top-2 right-2 w-2 h-2 bg-purple-500 rounded-full border-2 border-[#111633]"></span>
               </button>
               <div className="flex items-center gap-3 pl-4 border-l border-white/10">
@@ -580,19 +720,28 @@ export default function App() {
             </div>
           </div>
 
-          {error && (
-            <div className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-start gap-4">
-              <AlertCircle className="text-red-500 shrink-0" size={24} />
-              <div>
-                <h3 className="text-red-500 font-bold">Terjadi Kesalahan</h3>
-                <p className="text-sm text-red-400/80 mt-1">{error}</p>
-                <button 
-                  onClick={fetchData}
-                  className="mt-3 text-xs font-bold text-red-500 hover:underline flex items-center gap-1"
-                >
-                  <RefreshCw size={12} /> Coba Lagi
-                </button>
+          {error && !error.toLowerCase().includes("server") && (
+            <div className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <AlertCircle className="text-red-500 shrink-0" size={24} />
+                <div>
+                  <h3 className="text-red-500 font-bold">Pemberitahuan</h3>
+                  <p className="text-sm text-red-400/80 mt-1">{error}</p>
+                  <button 
+                    onClick={fetchData}
+                    className="mt-3 text-xs font-bold text-red-500 hover:underline flex items-center gap-1"
+                  >
+                    <RefreshCw size={12} /> Coba Lagi
+                  </button>
+                </div>
               </div>
+              <button 
+                onClick={() => setError(null)} 
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
+                title="Tutup"
+              >
+                <X size={18} />
+              </button>
             </div>
           )}
 
@@ -812,6 +961,89 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Modal Pengaturan URL Web App Google Apps Script */}
+      {showConfigModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-[#111633] border border-white/10 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                  <Settings size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Pengaturan Koneksi Web App</h3>
+                  <p className="text-xs text-slate-400">Konfigurasi URL Google Apps Script &amp; Spreadsheet</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowConfigModal(false)}
+                className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-white/5 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4 my-6">
+              <div>
+                <label className="text-xs font-semibold text-slate-300 mb-1.5 block">
+                  URL Google Apps Script Web App (/exec)
+                </label>
+                <input 
+                  type="url" 
+                  value={tempApiUrl}
+                  onChange={(e) => setTempApiUrl(e.target.value)}
+                  placeholder="https://script.google.com/macros/s/.../exec"
+                  className="w-full bg-[#080a1a] border border-white/10 rounded-xl p-3.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500 font-mono"
+                />
+                <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                  Jika Anda melakukan deploy ulang di Google Apps Script (Deploy &gt; New deployment &gt; Web app &gt; Anyone), tempelkan URL Web App baru di sini.
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
+                <div className="flex items-start gap-2.5">
+                  <CheckCircle size={16} className="text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="text-xs text-emerald-300">
+                    <p className="font-bold">Koneksi Cadangan Langsung Aktif</p>
+                    <p className="text-emerald-400/80 mt-0.5">
+                      Sistem membaca langsung data dari Google Spreadsheet ID: <span className="font-mono text-[10px] bg-emerald-950/60 px-1 py-0.5 rounded">{SPREADSHEET_ID}</span> sehingga data siswa ({students.length}) tetap tampil cepat dan andal.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => {
+                  setActiveApiUrl('');
+                  setTempApiUrl(getActiveApiUrl());
+                  setApiUrl(getActiveApiUrl());
+                  setShowConfigModal(false);
+                  fetchData();
+                }}
+                className="py-3 px-4 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs font-bold rounded-xl transition-all"
+              >
+                Reset Default
+              </button>
+              <button 
+                onClick={() => {
+                  setActiveApiUrl(tempApiUrl);
+                  setApiUrl(tempApiUrl.trim());
+                  setShowConfigModal(false);
+                  setSuccessMessage("URL Web App berhasil diperbarui!");
+                  fetchData();
+                  setTimeout(() => setSuccessMessage(null), 4000);
+                }}
+                className="flex-1 py-3 px-4 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-purple-600/20"
+              >
+                Simpan &amp; Terapkan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -826,33 +1058,33 @@ function LoginView({ onLogin, loading, error }: any) {
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-600/10 rounded-full blur-[120px] pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none"></div>
 
-      <div className="w-full max-w-md bg-[#111633]/80 backdrop-blur-xl border border-white/10 rounded-[2.5rem] p-10 shadow-2xl relative z-10">
-        <div className="text-center mb-10">
+      <div className="w-full max-w-md bg-[#111633]/80 backdrop-blur-xl border border-white/10 rounded-[2.5rem] p-8 md:p-10 shadow-2xl relative z-10">
+        <div className="text-center mb-8">
           <div className="w-20 h-20 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-purple-600/30">
             <Layout className="text-white" size={40} />
           </div>
           <h1 className="text-3xl font-bold text-white tracking-tight">Form Login</h1>
-          <p className="text-slate-400 text-sm mt-3">Silakan login untuk melanjutkan ke dashboard</p>
+          <p className="text-slate-400 text-sm mt-3">Sistem Manajemen Kelengkapan Data Siswa</p>
         </div>
 
         {error && (
-          <div className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 text-sm animate-pulse">
-            <AlertCircle size={18} />
-            <span>{error}</span>
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-start gap-3 text-red-400 text-sm animate-in fade-in">
+            <AlertCircle size={18} className="shrink-0 mt-0.5 text-red-400" />
+            <span className="leading-relaxed">{error}</span>
           </div>
         )}
 
-        <form onSubmit={(e) => { e.preventDefault(); onLogin(loginId); }} className="space-y-8">
-          <div className="space-y-3">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] ml-1">ID Login</label>
+        <form onSubmit={(e) => { e.preventDefault(); onLogin(loginId.trim()); }} className="space-y-6">
+          <div className="space-y-2.5">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] ml-1">ID Login / NIP</label>
             <div className="relative group">
               <User className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-purple-400 transition-colors" size={20} />
               <input 
                 type="text"
                 value={loginId}
                 onChange={(e) => setLoginId(e.target.value)}
-                placeholder="Masukkan ID Login Anda"
-                className="w-full bg-[#080a1a] border border-white/10 rounded-2xl py-4 pl-14 pr-6 focus:outline-none focus:border-purple-500/50 text-slate-200 transition-all placeholder:text-slate-600 shadow-inner"
+                placeholder="Masukkan ID Login atau NIP Anda"
+                className="w-full bg-[#080a1a] border border-white/10 rounded-2xl py-4 pl-14 pr-6 focus:outline-none focus:border-purple-500/50 text-slate-200 transition-all placeholder:text-slate-600 shadow-inner text-sm"
                 required
               />
             </div>
@@ -861,7 +1093,7 @@ function LoginView({ onLogin, loading, error }: any) {
           <button 
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:from-slate-800 disabled:to-slate-800 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-purple-600/20 active:scale-[0.98] border border-white/10"
+            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:from-slate-800 disabled:to-slate-800 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-purple-600/20 active:scale-[0.98] border border-white/10 text-sm"
           >
             {loading ? <RefreshCw className="animate-spin" size={20} /> : (
               <>
@@ -871,7 +1103,7 @@ function LoginView({ onLogin, loading, error }: any) {
           </button>
         </form>
 
-        <p className="text-center text-[10px] text-slate-600 uppercase tracking-[0.2em] mt-12 font-bold">
+        <p className="text-center text-[10px] text-slate-600 uppercase tracking-[0.2em] mt-8 font-bold">
           &copy; 2026 - App By Zulfitrah
         </p>
       </div>
@@ -914,7 +1146,7 @@ function DashboardView({ stats, notifications, user, students }: { stats: any, n
     const isParentMeninggal = (statusVal: any, kerjaVal: any) => {
       const s = statusVal ? statusVal.toString().trim().toLowerCase() : "";
       const k = kerjaVal ? kerjaVal.toString().trim().toLowerCase() : "";
-      return s.includes("wafat") || s.includes("meninggal") || k.includes("meninggal") || k.includes("wafat");
+      return s.includes("wafat") || s.includes("meninggal") || s === "2" || s === "3" || k.includes("meninggal") || k.includes("wafat") || k === "98";
     };
 
     const getOrtuCompletion = (st: any) => {
@@ -1010,6 +1242,10 @@ function DashboardView({ stats, notifications, user, students }: { stats: any, n
           if (isValValid(student.nipd) || isValValid(student.nipd_nisn) || isValValid(student.login) || isValValid(student.nisn)) count++;
         } else if (f === 'jurusan') {
           if (isValValid(student.jurusan) || isValValid(student.rombel)) count++;
+        } else if (f === 'jenis_tinggal') {
+          if (isValValid(student.jenis_tinggal) || isValValid(student.jenis_tinggal_id)) count++;
+        } else if (f === 'alat_transportasi') {
+          if (isValValid(student.alat_transportasi) || isValValid(student.alat_transportasi_id) || isValValid(student.transportasi)) count++;
         } else if (f === 'sebutkan_berapa_kilometer') {
           if (isValValid(student.sebutkan_berapa_kilometer) || isValValid(student.jarak_rumah_ke_sekolah)) count++;
         } else if (f === 'waktu_tempuh_ke_sekolah_menit') {
@@ -1227,8 +1463,8 @@ function DashboardView({ stats, notifications, user, students }: { stats: any, n
             </div>
 
             <div className="w-full lg:w-1/2 grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {visitorData.map((item) => (
-                <div key={item.name} className="bg-[#080a1a] border border-white/5 rounded-2xl p-6 flex flex-col gap-2">
+              {visitorData.map((item, idx) => (
+                <div key={`stat-${item.name}-${idx}`} className="bg-[#080a1a] border border-white/5 rounded-2xl p-6 flex flex-col gap-2">
                   <div className="flex items-center gap-3">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.fill }}></div>
                     <span className="text-sm text-slate-400 font-medium">{item.name}</span>
@@ -1290,8 +1526,8 @@ function DataSiswaView({
                 className="flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200"
               >
                 <option value="Semua">Verval Ijazah</option>
-                {uniqueStatusVerval.filter((v: string) => v !== "Semua").map((v: string) => (
-                  <option key={v} value={v}>{v}</option>
+                {uniqueStatusVerval.filter((v: string) => v !== "Semua").map((v: string, idx: number) => (
+                  <option key={`verval-opt-${v}-${idx}`} value={v}>{v}</option>
                 ))}
               </select>
               <select 
@@ -1300,8 +1536,8 @@ function DataSiswaView({
                 className="flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200"
               >
                 <option value="Semua">Verval KK</option>
-                {uniqueStatusKK.filter((v: string) => v !== "Semua").map((v: string) => (
-                  <option key={v} value={v}>{v}</option>
+                {uniqueStatusKK.filter((v: string) => v !== "Semua").map((v: string, idx: number) => (
+                  <option key={`kk-opt-${v}-${idx}`} value={v}>{v}</option>
                 ))}
               </select>
             </>
@@ -1313,8 +1549,8 @@ function DataSiswaView({
             disabled={uniqueRombels.length <= 1}
             className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            {uniqueRombels.map((r: string) => (
-              <option key={r} value={r}>{r}</option>
+            {uniqueRombels.map((r: string, idx: number) => (
+              <option key={`rombel-opt-${r}-${idx}`} value={r}>{r}</option>
             ))}
           </select>
           <div className="relative w-full md:w-72">
@@ -1354,7 +1590,7 @@ function DataSiswaView({
             </thead>
             <tbody className="divide-y divide-white/5">
             {students.map((s: any, idx: number) => (
-              <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+              <tr key={s.nisn ? `siswa-${s.nisn}-${idx}` : `siswa-${s.nipd || idx}-${idx}`} className="hover:bg-white/[0.02] transition-colors group">
                 <td className="p-5 text-sm font-bold text-slate-500">{idx + 1}</td>
                 <td className="p-5">
                   <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
@@ -1446,6 +1682,7 @@ function ProfilSiswaView({
 }: any) {
   const isUser = user?.status === 'user';
   const isAdmin = user?.status === 'admin';
+  const [selectedStudent, setSelectedStudent] = useState<any>(null);
 
   return (
     <div className="space-y-6 pb-10 animate-in slide-in-from-bottom-4 duration-500">
@@ -1458,8 +1695,8 @@ function ProfilSiswaView({
             disabled={uniqueRombels.length <= 1}
             className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            {uniqueRombels.map((r: string) => (
-              <option key={r} value={r}>{r}</option>
+            {uniqueRombels.map((r: string, idx: number) => (
+              <option key={`rombel-profil-opt-${r}-${idx}`} value={r}>{r}</option>
             ))}
           </select>
           <div className="relative w-full md:w-72">
@@ -1499,12 +1736,17 @@ function ProfilSiswaView({
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Email</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Rombel</th>
                 <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Jurusan</th>
-                {isAdmin && <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 text-right sticky right-0 bg-[#161b40] z-30">Aksi</th>}
+                <th className="p-5 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 text-center sticky right-0 bg-[#161b40] z-30 min-w-[120px]">
+                  <div className="flex items-center justify-center gap-1.5">
+                    <Eye size={13} className="text-purple-400" />
+                    <span>Aksi</span>
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-            {students.map((s: any) => (
-              <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+            {students.map((s: any, idx: number) => (
+              <tr key={s.nisn ? `profil-${s.nisn}-${idx}` : `profil-${s.nipd || idx}-${idx}`} className="hover:bg-white/[0.02] transition-colors group">
                 <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
                   <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
@@ -1512,37 +1754,316 @@ function ProfilSiswaView({
                 <td className="p-5 text-sm text-slate-300">{s.tempat_lahir || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.tanggal_lahir || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.nik || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.agama || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{formatAgama(s.agama || s.agama_id)}</td>
                 <td className="p-5 text-sm text-slate-300">{s.no_kk || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.reg_akta_lahir || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.jk || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{formatJenisKelamin(s.jk)}</td>
                 <td className="p-5 text-sm text-slate-300">{s.alamat_jalan || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.rt || "0"}/{s.rw || "0"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.nama_wil || s.wilayah || (s.kel || s.kec || s.kab_kota ? [s.kel, s.kec, s.kab_kota].filter(Boolean).join(', ') : "-")}</td>
                 <td className="p-5 text-sm text-slate-300">{s.kode_pos || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.jenis_tinggal || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.alat_transportasi || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{formatJenisTinggal(s.jenis_tinggal || s.jenis_tinggal_id)}</td>
+                <td className="p-5 text-sm text-slate-300">{formatAlatTransportasi(s.alat_transportasi || s.alat_transportasi_id || s.transportasi)}</td>
                 <td className="p-5 text-sm text-slate-300">{s.no_hp || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.email || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.rombel || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.jurusan || "-"}</td>
-                {isAdmin && (
-                  <td className="p-5 text-right sticky right-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-l border-white/5">
+                <td className="p-5 text-center sticky right-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-l border-white/5">
+                  <div className="flex items-center justify-center gap-1.5">
                     <button 
-                      onClick={() => onDelete(s.nisn)}
-                      className="p-2 text-slate-500 hover:text-red-400 transition-colors"
-                      title="Hapus Siswa"
+                      onClick={() => setSelectedStudent(s)}
+                      className="p-2 text-purple-400 hover:text-white bg-purple-500/10 hover:bg-purple-600/30 border border-purple-500/20 rounded-xl transition-all shadow-sm flex items-center gap-1"
+                      title="Lihat Data Lengkap Siswa"
                     >
-                      <Trash2 size={18}/>
+                      <Eye size={18}/>
                     </button>
-                  </td>
-                )}
+                    {isAdmin && (
+                      <button 
+                        onClick={() => onDelete(s.nisn)}
+                        className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors"
+                        title="Hapus Siswa"
+                      >
+                        <Trash2 size={18}/>
+                      </button>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
         </div>
       </div>
+
+      {/* Modal Detail Lengkap Siswa */}
+      {selectedStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#111633] border border-white/10 rounded-3xl p-6 md:p-8 max-w-3xl w-full shadow-2xl space-y-6 max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
+            
+            {/* Header Modal */}
+            <div className="flex items-start justify-between border-b border-white/10 pb-5 shrink-0">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 font-bold text-lg">
+                  {selectedStudent.nama ? selectedStudent.nama.charAt(0).toUpperCase() : <User size={24} />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-xl font-bold text-white leading-tight">{selectedStudent.nama}</h3>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2.5 py-0.5 rounded-full">
+                      {selectedStudent.rombel || 'Siswa'}
+                    </span>
+                    {selectedStudent.jurusan && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2.5 py-0.5 rounded-full">
+                        {selectedStudent.jurusan}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    NISN: <span className="text-slate-200 font-mono font-bold">{selectedStudent.nisn || '-'}</span> 
+                    {selectedStudent.nipd && <> | NIPD: <span className="text-slate-200 font-mono font-bold">{selectedStudent.nipd}</span></>}
+                    {selectedStudent.nik && <> | NIK: <span className="text-slate-200 font-mono font-bold">{selectedStudent.nik}</span></>}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedStudent(null)}
+                className="p-2 text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-all shrink-0"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content Modal (Scrollable) */}
+            <div className="space-y-6 overflow-y-auto custom-scrollbar pr-2 flex-1">
+              
+              {/* Bagian 1: Data Diri / Identitas Siswa */}
+              <div className="bg-[#181e42] border border-white/5 rounded-2xl p-5 space-y-4">
+                <h4 className="text-sm font-bold text-purple-300 uppercase tracking-wider flex items-center gap-2 border-b border-white/5 pb-2">
+                  <User size={16} className="text-purple-400" /> Data Pribadi Siswa
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Nama Lengkap</p>
+                    <p className="text-white font-medium">{selectedStudent.nama || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Jenis Kelamin</p>
+                    <p className="text-white font-medium">{formatJenisKelamin(selectedStudent.jk)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">NISN / NIPD</p>
+                    <p className="text-white font-medium">{selectedStudent.nisn || '-'} / {selectedStudent.nipd || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">NIK</p>
+                    <p className="text-white font-medium">{selectedStudent.nik || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">No. Kartu Keluarga (KK)</p>
+                    <p className="text-white font-medium">{selectedStudent.no_kk || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">No. Registrasi Akta Lahir</p>
+                    <p className="text-white font-medium">{selectedStudent.reg_akta_lahir || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Tempat, Tanggal Lahir</p>
+                    <p className="text-white font-medium">
+                      {[selectedStudent.tempat_lahir, selectedStudent.tanggal_lahir].filter(Boolean).join(', ') || '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Agama</p>
+                    <p className="text-white font-medium">{formatAgama(selectedStudent.agama || selectedStudent.agama_id)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">No. HP / Telepon</p>
+                    <p className="text-white font-medium">{selectedStudent.no_hp || selectedStudent.nomor_telepon || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Email</p>
+                    <p className="text-white font-medium">{selectedStudent.email || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Jenis Tempat Tinggal</p>
+                    <p className="text-white font-medium">{formatJenisTinggal(selectedStudent.jenis_tinggal || selectedStudent.jenis_tinggal_id)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Alat Transportasi</p>
+                    <p className="text-white font-medium">{formatAlatTransportasi(selectedStudent.alat_transportasi || selectedStudent.alat_transportasi_id || selectedStudent.transportasi)}</p>
+                  </div>
+                  <div className="sm:col-span-2 md:col-span-3">
+                    <p className="text-slate-500 font-semibold mb-0.5">Alamat Jalan & RT/RW</p>
+                    <p className="text-white font-medium">
+                      {selectedStudent.alamat_jalan || '-'} (RT {selectedStudent.rt || '0'} / RW {selectedStudent.rw || '0'})
+                    </p>
+                  </div>
+                  <div className="sm:col-span-2 md:col-span-3">
+                    <p className="text-slate-500 font-semibold mb-0.5">Wilayah (Kelurahan, Kecamatan, Kab/Kota, Kodepos)</p>
+                    <p className="text-white font-medium">
+                      {[selectedStudent.kel, selectedStudent.kec, selectedStudent.kab_kota, selectedStudent.nama_wil, selectedStudent.wilayah].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ') || '-'} 
+                      {selectedStudent.kode_pos ? ` (${selectedStudent.kode_pos})` : ''}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bagian 2: Data Orang Tua */}
+              <div className="bg-[#181e42] border border-white/5 rounded-2xl p-5 space-y-4">
+                <h4 className="text-sm font-bold text-blue-300 uppercase tracking-wider flex items-center gap-2 border-b border-white/5 pb-2">
+                  <Users size={16} className="text-blue-400" /> Data Orang Tua & Wali
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+                  {/* Ayah */}
+                  <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4 space-y-2.5">
+                    <p className="text-blue-400 font-bold uppercase tracking-wider text-[11px] pb-1 border-b border-white/5">
+                      Data Ayah Kandung
+                    </p>
+                    <div><span className="text-slate-500 font-semibold">Nama: </span><span className="text-white font-medium">{selectedStudent.nama_ayah || '-'}</span></div>
+                    <div><span className="text-slate-500 font-semibold">Status Hidup: </span><span className="text-white font-medium">{formatStatusHidup(selectedStudent.status_hidup_ayah)}</span></div>
+                    <div><span className="text-slate-500 font-semibold">NIK: </span><span className="text-white font-medium">{selectedStudent.nik_ayah || '-'}</span></div>
+                    <div><span className="text-slate-500 font-semibold">Tahun Lahir: </span><span className="text-white font-medium">{selectedStudent.tahun_lahir_ayah || '-'}</span></div>
+                    <div><span className="text-slate-500 font-semibold">Pendidikan: </span><span className="text-white font-medium">{formatJenjangPendidikan(selectedStudent.jenjang_pendidikan_ayah)}</span></div>
+                    <div><span className="text-slate-500 font-semibold">Pekerjaan: </span><span className="text-white font-medium">{formatPekerjaan(selectedStudent.pekerjaan_ayah)}</span></div>
+                    <div><span className="text-slate-500 font-semibold">Penghasilan: </span><span className="text-white font-medium">{formatPenghasilan(selectedStudent.penghasilan_ayah)}</span></div>
+                  </div>
+
+                  {/* Ibu */}
+                  <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4 space-y-2.5">
+                    <p className="text-pink-400 font-bold uppercase tracking-wider text-[11px] pb-1 border-b border-white/5">
+                      Data Ibu Kandung
+                    </p>
+                    <div><span className="text-slate-500 font-semibold">Nama: </span><span className="text-white font-medium">{selectedStudent.nama_ibu || '-'}</span></div>
+                    <div><span className="text-slate-500 font-semibold">Status Hidup: </span><span className="text-white font-medium">{formatStatusHidup(selectedStudent.status_hidup_ibu)}</span></div>
+                    <div><span className="text-slate-500 font-semibold">NIK: </span><span className="text-white font-medium">{selectedStudent.nik_ibu || '-'}</span></div>
+                    <div><span className="text-slate-500 font-semibold">Tahun Lahir: </span><span className="text-white font-medium">{selectedStudent.tahun_lahir_ibu || '-'}</span></div>
+                    <div><span className="text-slate-500 font-semibold">Pendidikan: </span><span className="text-white font-medium">{formatJenjangPendidikan(selectedStudent.jenjang_pendidikan_ibu)}</span></div>
+                    <div><span className="text-slate-500 font-semibold">Pekerjaan: </span><span className="text-white font-medium">{formatPekerjaan(selectedStudent.pekerjaan_ibu)}</span></div>
+                    <div><span className="text-slate-500 font-semibold">Penghasilan: </span><span className="text-white font-medium">{formatPenghasilan(selectedStudent.penghasilan_ibu)}</span></div>
+                  </div>
+                </div>
+
+                {/* Wali jika ada */}
+                {(selectedStudent.nama_wali || selectedStudent.pekerjaan_wali) && (
+                  <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4 space-y-2 text-xs">
+                    <p className="text-amber-400 font-bold uppercase tracking-wider text-[11px] pb-1 border-b border-white/5">
+                      Data Wali
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div><span className="text-slate-500 font-semibold">Nama: </span><span className="text-white font-medium">{selectedStudent.nama_wali || '-'}</span></div>
+                      <div><span className="text-slate-500 font-semibold">Pekerjaan: </span><span className="text-white font-medium">{formatPekerjaan(selectedStudent.pekerjaan_wali)}</span></div>
+                      <div><span className="text-slate-500 font-semibold">Penghasilan: </span><span className="text-white font-medium">{formatPenghasilan(selectedStudent.penghasilan_wali)}</span></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Bagian 3: Registrasi & Periodik */}
+              <div className="bg-[#181e42] border border-white/5 rounded-2xl p-5 space-y-4">
+                <h4 className="text-sm font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-2 border-b border-white/5 pb-2">
+                  <FileText size={16} className="text-emerald-400" /> Registrasi & Data Periodik
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Sekolah Asal</p>
+                    <p className="text-white font-medium">{selectedStudent.sekolah_asal || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Hobi</p>
+                    <p className="text-white font-medium">{formatHobi(selectedStudent.id_hobby || selectedStudent.hobi || selectedStudent.hobby)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Cita-cita</p>
+                    <p className="text-white font-medium">{formatCitaCita(selectedStudent.id_cita || selectedStudent.id_cita_cita || selectedStudent.cita_cita || selectedStudent.cita)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Tinggi / Berat Badan</p>
+                    <p className="text-white font-medium">{selectedStudent.tinggi_badan ? `${selectedStudent.tinggi_badan} cm` : '-'} / {selectedStudent.berat_badan ? `${selectedStudent.berat_badan} kg` : '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Lingkar Kepala</p>
+                    <p className="text-white font-medium">{selectedStudent.lingkar_kepala ? `${selectedStudent.lingkar_kepala} cm` : '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Anak Ke- / Jumlah Saudara</p>
+                    <p className="text-white font-medium">{selectedStudent.anak_ke || '-'} dari {selectedStudent.jumlah_saudara_kandung || '-'} bersaudara</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Jarak Ke Sekolah</p>
+                    <p className="text-white font-medium">
+                      {formatJarak(selectedStudent.jarak_rumah_ke_sekolah)} 
+                      {selectedStudent.sebutkan_berapa_kilometer ? ` (${selectedStudent.sebutkan_berapa_kilometer} km)` : ''}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Waktu Tempuh</p>
+                    <p className="text-white font-medium">{selectedStudent.waktu_tempuh_ke_sekolah_menit ? `${selectedStudent.waktu_tempuh_ke_sekolah_menit} Menit` : '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-semibold mb-0.5">Riwayat Terakhir Login</p>
+                    <p className="text-white font-medium">{selectedStudent.terakhir_login || selectedStudent.terakhir_login_siswa || '-'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bagian 4: Status Verval & Berkas */}
+              {(selectedStudent.status_verval || selectedStudent.status_kk || selectedStudent.upload_ijazah || selectedStudent.upload_kk) && (
+                <div className="bg-[#181e42] border border-white/5 rounded-2xl p-5 space-y-4">
+                  <h4 className="text-sm font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-2 border-b border-white/5 pb-2">
+                    <ShieldCheck size={16} className="text-cyan-400" /> Status Verval & Berkas Siswa
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                    <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-slate-500 font-semibold">Status Verval Ijazah</p>
+                        <p className="text-white font-bold mt-0.5">{selectedStudent.status_verval || '-'}</p>
+                      </div>
+                      {selectedStudent.upload_ijazah && (
+                        <a 
+                          href={selectedStudent.upload_ijazah} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded-lg font-bold transition-all text-[11px]"
+                        >
+                          Lihat Ijazah ↗
+                        </a>
+                      )}
+                    </div>
+                    <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-slate-500 font-semibold">Status Dokumen KK</p>
+                        <p className="text-white font-bold mt-0.5">{selectedStudent.status_kk || '-'}</p>
+                      </div>
+                      {selectedStudent.upload_kk && (
+                        <a 
+                          href={selectedStudent.upload_kk} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded-lg font-bold transition-all text-[11px]"
+                        >
+                          Lihat KK ↗
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* Footer Modal */}
+            <div className="pt-2 flex justify-end border-t border-white/10 shrink-0">
+              <button
+                onClick={() => setSelectedStudent(null)}
+                className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-sm rounded-xl transition-all shadow-lg"
+              >
+                Tutup
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1566,8 +2087,8 @@ function KurangMampuView({
             disabled={uniqueRombels.length <= 1}
             className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            {uniqueRombels.map((r: string) => (
-              <option key={r} value={r}>{r}</option>
+            {uniqueRombels.map((r: string, idx: number) => (
+              <option key={`rombel-km-opt-${r}-${idx}`} value={r}>{r}</option>
             ))}
           </select>
           <div className="relative w-full md:w-72">
@@ -1605,8 +2126,8 @@ function KurangMampuView({
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-            {data.map((s: any) => (
-              <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+            {data.map((s: any, idx: number) => (
+              <tr key={s.nisn ? `km-${s.nisn}-${idx}` : `km-${s.nipd || idx}-${idx}`} className="hover:bg-white/[0.02] transition-colors group">
                 <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
                   <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
@@ -1614,7 +2135,7 @@ function KurangMampuView({
                 <td className="p-5 text-sm text-slate-300">{s.rombel || "-"}</td>
                 {!isUser && (
                   <>
-                    <td className="p-5 text-sm text-slate-300">{s.kurang_mampu || "-"}</td>
+                    <td className="p-5 text-sm text-slate-300">{formatKurangMampu(s.kurang_mampu)}</td>
                     <td className="p-5 text-sm text-slate-300">{s.ket_kip || "-"}</td>
                     <td className="p-5 text-sm text-slate-300">{s.no_kip || "-"}</td>
                     <td className="p-5 text-sm text-slate-300">{s.nama_di_kip || "-"}</td>
@@ -1767,11 +2288,11 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {availableClasses.map((c: string) => {
+                  {availableClasses.map((c: string, idx: number) => {
                     const isSelected = selectedTargets.includes(c);
                     return (
                       <button
-                        key={c}
+                        key={`class-target-${c}-${idx}`}
                         type="button"
                         onClick={() => toggleTarget(c)}
                         className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all border flex items-center gap-2 ${
@@ -1798,9 +2319,9 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-bold text-slate-500 uppercase">Filter:</span>
                     <div className="flex gap-1 bg-[#080a1a] p-1 rounded-xl border border-white/10 text-xs">
-                      {["Semua", ...availableClasses].map((cf: string) => (
+                      {Array.from(new Set(["Semua", ...availableClasses])).map((cf: string, idx: number) => (
                         <button
-                          key={cf}
+                          key={`filter-cf-${cf}-${idx}`}
                           type="button"
                           onClick={() => setRombelClassFilter(cf)}
                           className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all ${
@@ -1820,11 +2341,11 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [
                   {filteredRombels.length === 0 ? (
                     <span className="text-xs text-slate-500 italic p-2">Tidak ada data Rombel ditemukan</span>
                   ) : (
-                    filteredRombels.map((r: string) => {
+                    filteredRombels.map((r: string, idx: number) => {
                       const isSelected = selectedTargets.includes(r);
                       return (
                         <button
-                          key={r}
+                          key={`rombel-btn-${r}-${idx}`}
                           type="button"
                           onClick={() => toggleTarget(r)}
                           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 ${
@@ -1885,11 +2406,11 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [
                   </div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {menuOptions.map((menu) => {
+                  {menuOptions.map((menu, idx: number) => {
                     const isSelected = form.selected_menus.includes(menu);
                     return (
                       <button
-                        key={menu}
+                        key={`menu-${menu}-${idx}`}
                         type="button"
                         onClick={() => {
                           let next;
@@ -1944,8 +2465,8 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [
               {rombelAccessSummary.length === 0 ? (
                 <p className="text-xs text-slate-500 italic">Belum ada data rombel</p>
               ) : (
-                rombelAccessSummary.map((item: any) => (
-                  <div key={item.rombel} className="bg-[#111633] border border-white/10 rounded-2xl p-4 space-y-1.5 hover:border-purple-500/30 transition-all">
+                rombelAccessSummary.map((item: any, idx: number) => (
+                  <div key={`summary-rombel-${item.rombel}-${idx}`} className="bg-[#111633] border border-white/10 rounded-2xl p-4 space-y-1.5 hover:border-purple-500/30 transition-all">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]"></span>
@@ -1980,8 +2501,8 @@ function AksesMenuView({ form, setForm, onSave, uniqueClasses, uniqueRombels = [
           <div className="space-y-3 pt-4 border-t border-white/10">
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Akses Per Tingkat Kelas</h4>
             <div className="space-y-2">
-              {classAccessSummary.map((item: any) => (
-                <div key={item.kelas} className="bg-[#111633] border border-white/10 rounded-2xl p-4 space-y-1.5">
+              {classAccessSummary.map((item: any, idx: number) => (
+                <div key={`summary-class-${item.kelas}-${idx}`} className="bg-[#111633] border border-white/10 rounded-2xl p-4 space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-400">Kelas {item.kelas}</span>
                     <div className="w-2 h-2 rounded-full bg-blue-500"></div>
@@ -2024,14 +2545,14 @@ function NotifView({ form, setForm, notifications, onSend, onDelete, onEdit, isE
             <div className="space-y-3">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Target Kelas</label>
               <div className="flex flex-wrap gap-2">
-                {uniqueClasses.map((c: string) => {
+                {uniqueClasses.map((c: string, idx: number) => {
                   const isSelected = c === "Semua" 
                     ? (form.target_kelas === "" || form.target_kelas === "Semua")
                     : form.target_kelas.split(',').filter(Boolean).includes(c);
                   
                   return (
                     <button
-                      key={c}
+                      key={`notif-class-${c}-${idx}`}
                       type="button"
                       onClick={() => {
                         if (c === "Semua") {
@@ -2127,7 +2648,7 @@ function NotifView({ form, setForm, notifications, onSend, onDelete, onEdit, isE
                   </tr>
                 ) : (
                   notifications.map((notif: any, idx: number) => (
-                    <tr key={idx} className="hover:bg-white/[0.02] transition-colors group">
+                    <tr key={notif.id ? `notif-${notif.id}-${idx}` : `notif-${idx}`} className="hover:bg-white/[0.02] transition-colors group">
                       <td className="p-5 text-sm text-slate-400 font-medium">
                         {notif.tanggal ? new Date(notif.tanggal).toLocaleDateString('id-ID') : '-'}
                       </td>
@@ -2215,8 +2736,8 @@ function OrangTuaView({
             disabled={uniqueRombels.length <= 1}
             className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            {uniqueRombels.map((r: string) => (
-              <option key={r} value={r}>{r}</option>
+            {uniqueRombels.map((r: string, idx: number) => (
+              <option key={`rombel-ortu-opt-${r}-${idx}`} value={r}>{r}</option>
             ))}
           </select>
           <div className="relative w-full md:w-72">
@@ -2256,48 +2777,63 @@ function OrangTuaView({
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-            {students.map((s: any) => {
-              const isAyahMeninggal = (s.status_hidup_ayah || "").toString().toLowerCase().includes("wafat") || 
-                                      (s.status_hidup_ayah || "").toString().toLowerCase().includes("meninggal") || 
-                                      (s.pekerjaan_ayah || "").toString().toLowerCase().includes("meninggal");
-              const isIbuMeninggal = (s.status_hidup_ibu || "").toString().toLowerCase().includes("wafat") || 
-                                     (s.status_hidup_ibu || "").toString().toLowerCase().includes("meninggal") || 
-                                     (s.pekerjaan_ibu || "").toString().toLowerCase().includes("meninggal");
+            {students.map((s: any, idx: number) => {
+              const ayahStatusRaw = (s.status_hidup_ayah || "").toString().trim();
+              const ayahKerjaRaw = (s.pekerjaan_ayah || "").toString().trim();
+              const isAyahMeninggal = ayahStatusRaw.toLowerCase().includes("wafat") || 
+                                      ayahStatusRaw.toLowerCase().includes("meninggal") || 
+                                      ayahStatusRaw === "2" || ayahStatusRaw === "3" ||
+                                      ayahKerjaRaw.toLowerCase().includes("meninggal") ||
+                                      ayahKerjaRaw === "98";
 
-              const hasStatusAyah = s.status_hidup_ayah && s.status_hidup_ayah.toString().trim() !== "" && s.status_hidup_ayah.toString().trim() !== "-";
-              const hasStatusIbu = s.status_hidup_ibu && s.status_hidup_ibu.toString().trim() !== "" && s.status_hidup_ibu.toString().trim() !== "-";
+              const ibuStatusRaw = (s.status_hidup_ibu || "").toString().trim();
+              const ibuKerjaRaw = (s.pekerjaan_ibu || "").toString().trim();
+              const isIbuMeninggal = ibuStatusRaw.toLowerCase().includes("wafat") || 
+                                     ibuStatusRaw.toLowerCase().includes("meninggal") || 
+                                     ibuStatusRaw === "2" || ibuStatusRaw === "3" ||
+                                     ibuKerjaRaw.toLowerCase().includes("meninggal") ||
+                                     ibuKerjaRaw === "98";
 
-              const statusAyahDisplay = hasStatusAyah ? s.status_hidup_ayah : (isAyahMeninggal ? "Wafat" : "-");
-              const statusIbuDisplay = hasStatusIbu ? s.status_hidup_ibu : (isIbuMeninggal ? "Wafat" : "-");
+              const hasStatusAyah = ayahStatusRaw !== "" && ayahStatusRaw !== "-";
+              const hasStatusIbu = ibuStatusRaw !== "" && ibuStatusRaw !== "-";
+
+              const statusAyahDisplay = hasStatusAyah ? formatStatusHidup(ayahStatusRaw) : (isAyahMeninggal ? "Sudah Meninggal" : "-");
+              const statusIbuDisplay = hasStatusIbu ? formatStatusHidup(ibuStatusRaw) : (isIbuMeninggal ? "Sudah Meninggal" : "-");
+
+              const isAyahWafatBadge = statusAyahDisplay.toLowerCase().includes("meninggal") || statusAyahDisplay.toLowerCase().includes("wafat");
+              const isAyahHidupBadge = statusAyahDisplay.toLowerCase().includes("hidup");
+
+              const isIbuWafatBadge = statusIbuDisplay.toLowerCase().includes("meninggal") || statusIbuDisplay.toLowerCase().includes("wafat");
+              const isIbuHidupBadge = statusIbuDisplay.toLowerCase().includes("hidup");
 
               return (
-                <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+                <tr key={s.nisn ? `ortu-${s.nisn}-${idx}` : `ortu-${s.nipd || idx}-${idx}`} className="hover:bg-white/[0.02] transition-colors group">
                   <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
                     <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
                     <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
                   </td>
                   <td className="p-5 text-sm text-slate-300">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold inline-block ${statusAyahDisplay === 'Wafat' ? 'bg-red-500/20 text-red-300 border border-red-500/30' : statusAyahDisplay === 'Hidup' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-slate-400'}`}>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold inline-block ${isAyahWafatBadge ? 'bg-red-500/20 text-red-300 border border-red-500/30' : isAyahHidupBadge ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-slate-400'}`}>
                       {statusAyahDisplay}
                     </span>
                   </td>
                   <td className="p-5 text-sm text-slate-300">{s.nama_ayah || "-"}</td>
                   <td className="p-5 text-sm text-slate-300">{s.nik_ayah || "-"}</td>
                   <td className="p-5 text-sm text-slate-300">{s.tahun_lahir_ayah || "-"}</td>
-                  <td className="p-5 text-sm text-slate-300">{s.jenjang_pendidikan_ayah || "-"}</td>
-                  <td className="p-5 text-sm text-slate-300">{s.pekerjaan_ayah || (isAyahMeninggal ? "Sudah Meninggal" : "-")}</td>
-                  <td className="p-5 text-sm text-slate-300">{s.penghasilan_ayah || (isAyahMeninggal ? "Tidak Berpenghasilan" : "-")}</td>
+                  <td className="p-5 text-sm text-slate-300">{formatJenjangPendidikan(s.jenjang_pendidikan_ayah)}</td>
+                  <td className="p-5 text-sm text-slate-300">{formatPekerjaan(s.pekerjaan_ayah || (isAyahMeninggal ? "Sudah Meninggal" : "-"))}</td>
+                  <td className="p-5 text-sm text-slate-300">{formatPenghasilan(s.penghasilan_ayah || (isAyahMeninggal ? "Tidak Berpenghasilan" : "-"))}</td>
                   <td className="p-5 text-sm text-slate-300">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold inline-block ${statusIbuDisplay === 'Wafat' ? 'bg-red-500/20 text-red-300 border border-red-500/30' : statusIbuDisplay === 'Hidup' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-slate-400'}`}>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold inline-block ${isIbuWafatBadge ? 'bg-red-500/20 text-red-300 border border-red-500/30' : isIbuHidupBadge ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-slate-400'}`}>
                       {statusIbuDisplay}
                     </span>
                   </td>
                   <td className="p-5 text-sm text-slate-300">{s.nama_ibu || "-"}</td>
                   <td className="p-5 text-sm text-slate-300">{s.nik_ibu || "-"}</td>
                   <td className="p-5 text-sm text-slate-300">{s.tahun_lahir_ibu || "-"}</td>
-                  <td className="p-5 text-sm text-slate-300">{s.jenjang_pendidikan_ibu || "-"}</td>
-                  <td className="p-5 text-sm text-slate-300">{s.pekerjaan_ibu || (isIbuMeninggal ? "Sudah Meninggal" : "-")}</td>
-                  <td className="p-5 text-sm text-slate-300">{s.penghasilan_ibu || (isIbuMeninggal ? "Tidak Berpenghasilan" : "-")}</td>
+                  <td className="p-5 text-sm text-slate-300">{formatJenjangPendidikan(s.jenjang_pendidikan_ibu)}</td>
+                  <td className="p-5 text-sm text-slate-300">{formatPekerjaan(s.pekerjaan_ibu || (isIbuMeninggal ? "Sudah Meninggal" : "-"))}</td>
+                  <td className="p-5 text-sm text-slate-300">{formatPenghasilan(s.penghasilan_ibu || (isIbuMeninggal ? "Tidak Berpenghasilan" : "-"))}</td>
                 </tr>
               );
             })}
@@ -2328,8 +2864,8 @@ function RegistrasiView({
             disabled={uniqueRombels.length <= 1}
             className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            {uniqueRombels.map((r: string) => (
-              <option key={r} value={r}>{r}</option>
+            {uniqueRombels.map((r: string, idx: number) => (
+              <option key={`rombel-reg-opt-${r}-${idx}`} value={r}>{r}</option>
             ))}
           </select>
           <div className="relative w-full md:w-72">
@@ -2360,15 +2896,15 @@ function RegistrasiView({
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-            {students.map((s: any) => (
-              <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+            {students.map((s: any, idx: number) => (
+              <tr key={s.nisn ? `reg-${s.nisn}-${idx}` : `reg-${s.nipd || idx}-${idx}`} className="hover:bg-white/[0.02] transition-colors group">
                 <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
                   <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
                 </td>
                 <td className="p-5 text-sm text-slate-300">{s.sekolah_asal || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.id_hobby || s.hobi || s.hobby || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.id_cita || s.id_cita_cita || s.cita_cita || s.cita || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{formatHobi(s.id_hobby || s.hobi || s.hobby)}</td>
+                <td className="p-5 text-sm text-slate-300">{formatCitaCita(s.id_cita || s.id_cita_cita || s.cita_cita || s.cita)}</td>
                 <td className="p-5 text-sm text-slate-300">{s.no_peserta_ujian || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.no_seri_ijazah || "-"}</td>
               </tr>
@@ -2400,8 +2936,8 @@ function PeriodikView({
             disabled={uniqueRombels.length <= 1}
             className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            {uniqueRombels.map((r: string) => (
-              <option key={r} value={r}>{r}</option>
+            {uniqueRombels.map((r: string, idx: number) => (
+              <option key={`rombel-periodik-opt-${r}-${idx}`} value={r}>{r}</option>
             ))}
           </select>
           <div className="relative w-full md:w-72">
@@ -2435,8 +2971,8 @@ function PeriodikView({
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-            {students.map((s: any) => (
-              <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+            {students.map((s: any, idx: number) => (
+              <tr key={s.nisn ? `periodik-${s.nisn}-${idx}` : `periodik-${s.nipd || idx}-${idx}`} className="hover:bg-white/[0.02] transition-colors group">
                 <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
                   <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{s.nisn}</p>
@@ -2446,7 +2982,7 @@ function PeriodikView({
                 <td className="p-5 text-sm text-slate-300">{s.lingkar_kepala || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.jumlah_saudara_kandung || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.anak_ke || "-"}</td>
-                <td className="p-5 text-sm text-slate-300">{s.jarak_rumah_ke_sekolah || "-"}</td>
+                <td className="p-5 text-sm text-slate-300">{formatJarak(s.jarak_rumah_ke_sekolah)}</td>
                 <td className="p-5 text-sm text-slate-300">{s.sebutkan_berapa_kilometer || "-"}</td>
                 <td className="p-5 text-sm text-slate-300">{s.waktu_tempuh_ke_sekolah_menit || "-"}</td>
               </tr>
@@ -2543,7 +3079,7 @@ function RekapInputanView({
   const isParentMeninggal = (statusVal: any, kerjaVal: any) => {
     const s = statusVal ? statusVal.toString().trim().toLowerCase() : "";
     const k = kerjaVal ? kerjaVal.toString().trim().toLowerCase() : "";
-    return s.includes("wafat") || s.includes("meninggal") || k.includes("meninggal") || k.includes("wafat");
+    return s.includes("wafat") || s.includes("meninggal") || s === "2" || s === "3" || k.includes("meninggal") || k.includes("wafat") || k === "98";
   };
 
   const getMissingFields = (st: any, category: 'profil' | 'ortu' | 'registrasi' | 'periodik'): string[] => {
@@ -2745,6 +3281,14 @@ function RekapInputanView({
         if (isValValid(student.jurusan) || isValValid(student.rombel)) {
           count++;
         }
+      } else if (f === 'jenis_tinggal') {
+        if (isValValid(student.jenis_tinggal) || isValValid(student.jenis_tinggal_id)) {
+          count++;
+        }
+      } else if (f === 'alat_transportasi') {
+        if (isValValid(student.alat_transportasi) || isValValid(student.alat_transportasi_id) || isValValid(student.transportasi)) {
+          count++;
+        }
       } else if (f === 'sebutkan_berapa_kilometer') {
         if (isValValid(student.sebutkan_berapa_kilometer) || isValValid(student.jarak_rumah_ke_sekolah)) {
           count++;
@@ -2873,7 +3417,7 @@ function RekapInputanView({
             </div>
             <ul className="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar text-[11px] text-slate-200">
               {missing.map((item, idx) => (
-                <li key={idx} className="flex items-center gap-1.5">
+                <li key={`missing-tooltip-${item}-${idx}`} className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
                   <span className="truncate">{item}</span>
                 </li>
@@ -2951,8 +3495,8 @@ function RekapInputanView({
             disabled={uniqueRombels.length <= 1}
             className={`flex-1 md:flex-none bg-[#111633] border border-white/10 rounded-xl py-2.5 px-4 focus:outline-none focus:border-purple-500/50 text-sm text-slate-200 ${uniqueRombels.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            {uniqueRombels.map((r: string) => (
-              <option key={r} value={r}>{r}</option>
+            {uniqueRombels.map((r: string, idx: number) => (
+              <option key={`rombel-rekap-opt-${r}-${idx}`} value={r}>{r}</option>
             ))}
           </select>
 
@@ -3024,7 +3568,7 @@ function RekapInputanView({
                 </tr>
               ) : (
                 filteredStats.map((s: any, idx: number) => (
-                  <tr key={s.nisn} className="hover:bg-white/[0.02] transition-colors group">
+                  <tr key={s.nisn ? `rekap-${s.nisn}-${idx}` : `rekap-${s.nipd || idx}-${idx}`} className="hover:bg-white/[0.02] transition-colors group">
                     <td className="p-5 text-sm font-bold text-slate-500">{idx + 1}</td>
                     <td className="p-5 sticky left-0 bg-[#111633] group-hover:bg-[#1a1f3d] z-10 border-r border-white/5">
                       <p className="font-bold text-white group-hover:text-purple-400 transition-colors">{s.nama}</p>
@@ -3083,7 +3627,7 @@ function RekapInputanView({
                 <p className="text-xs font-semibold text-slate-400 mb-2.5">Daftar Field Yang Belum Diisi:</p>
                 <ul className="space-y-2">
                   {selectedDetail.missing.map((field: string, idx: number) => (
-                    <li key={idx} className="flex items-center gap-2.5 text-xs text-slate-200 bg-white/[0.03] border border-white/5 p-2.5 rounded-xl">
+                    <li key={`detail-missing-${field}-${idx}`} className="flex items-center gap-2.5 text-xs text-slate-200 bg-white/[0.03] border border-white/5 p-2.5 rounded-xl">
                       <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
                       <span className="font-medium">{field}</span>
                     </li>
